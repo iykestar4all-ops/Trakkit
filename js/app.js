@@ -128,7 +128,12 @@ function renderAuth() {
             </div>
           </div>
           <div class="field"><label>Email</label><input class="input" id="aEmail" type="email" autocomplete="email" placeholder="you@example.com"/></div>
-          <div class="field"><label>Password</label><input class="input" id="aPass" type="password" autocomplete="current-password" placeholder="At least 6 characters"/></div>
+          <div class="field"><label>Password</label>
+            <div class="pw-field">
+              <input class="input" id="aPass" type="password" autocomplete="current-password" placeholder="At least 6 characters"/>
+              <button type="button" class="pw-toggle" id="aPassToggle" aria-label="Show password">${icon("eye", 18)}</button>
+            </div>
+          </div>
           <p class="auth-err" id="authErr" hidden></p>
           <button class="btn accent block" id="authSubmit" type="submit">Log in</button>
         </form>
@@ -151,6 +156,15 @@ function renderAuth() {
   };
   $$("#authMode button", view).forEach((b) => b.addEventListener("click", () => setMode(b.dataset.m)));
   $("[data-switch]", view).addEventListener("click", (e) => setMode(e.target.dataset.switch));
+
+  const pw = $("#aPass", view), pwToggle = $("#aPassToggle", view);
+  pwToggle.addEventListener("click", () => {
+    const show = pw.type === "password";
+    pw.type = show ? "text" : "password";
+    pwToggle.innerHTML = icon(show ? "eyeOff" : "eye", 18);
+    pwToggle.setAttribute("aria-label", show ? "Hide password" : "Show password");
+    pw.focus();
+  });
 
   $("#authForm", view).addEventListener("submit", async (e) => {
     e.preventDefault();
