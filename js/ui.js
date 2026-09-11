@@ -153,6 +153,27 @@ export function ago(ts) {
   return new Date(ts).toLocaleDateString("en-NG", { day: "numeric", month: "short" });
 }
 
+/* ---- read + downscale an image file to a small data URL ---- */
+export function fileToImage(file, { max = 300, type = "image/png", quality = 0.9 } = {}) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onerror = () => resolve(null);
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => resolve(null);
+      img.onload = () => {
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale)), h = Math.max(1, Math.round(img.height * scale));
+        const c = document.createElement("canvas"); c.width = w; c.height = h;
+        c.getContext("2d").drawImage(img, 0, 0, w, h);
+        try { resolve(c.toDataURL(type, quality)); } catch { resolve(null); }
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 /* ---- escape for user text in templates ---- */
 export function esc(s = "") {
   return String(s).replace(/[&<>"']/g, (c) => (

@@ -7,12 +7,12 @@
 import {
   Store, unitCost, unitProfit, marginPct, marginBand, newId,
   invSubtotal, invTotal, invCost, invProfit, invEffectiveStatus,
-  TRIAL_DAYS, SUB_PRICE,
+  TRIAL_DAYS, SUB_PRICE, SUB_PRICE_WEEK, batchCost,
 } from "./store.js";
 import { API } from "./api.js";
 import {
   $, $$, naira, pct, icon, pageHead, donut, SEG_COLORS,
-  openDialog, closeDialog, toast, ago, esc,
+  openDialog, closeDialog, toast, ago, esc, fileToImage,
 } from "./ui.js";
 import { go, logout, refreshChrome } from "./app.js";
 
@@ -47,6 +47,10 @@ function meter(p) {
 }
 function biggestOffender() {
   return Store.products().filter((p) => Number(p.price) > 0).sort((a, b) => marginPct(a) - marginPct(b))[0];
+}
+/* product photo (uploaded image) or emoji fallback, filling its container */
+function pThumb(p) {
+  return p.image ? `<img src="${p.image}" alt="" style="width:100%;height:100%;object-fit:cover"/>` : (p.emoji || "📦");
 }
 
 /* ============================================================
@@ -131,7 +135,7 @@ function recentActivity(limit = 5) {
   return sales.map((s) => {
     const p = Store.product(s.productId); if (!p) return "";
     const prof = unitProfit(p) * s.qty;
-    return `<div class="act"><span class="ai">${p.emoji || "📦"}</span>
+    return `<div class="act"><span class="ai">${pThumb(p)}</span>
       <span class="info"><b>${esc(p.name)}</b><span>${s.qty} × ${naira(p.price)} · ${ago(s.at)}</span></span>
       <span class="amt ${s.paid ? "pos" : "owe"}">${s.paid ? naira(prof, { sign: true }) : "owing"}</span></div>`;
   }).join("");
@@ -163,7 +167,7 @@ function productRow(p) {
   const { band, w, m } = meter(p);
   const prof = unitProfit(p);
   return `<button class="prow" data-edit="${p.id}">
-    <span class="thumb">${p.emoji || "📦"}</span>
+    <span class="thumb">${pThumb(p)}</span>
     <span class="info"><b>${esc(p.name)}</b><span class="sub">${naira(p.price)} · cost ${naira(unitCost(p))}${typeof p.stock === "number" ? " · " + p.stock + " in stock" : ""}</span></span>
     <span class="right">
       <span class="meter-wrap"><span class="meter ${band}"><i style="width:${w}%"></i></span>
@@ -183,13 +187,23 @@ function emptyProducts() {
 function openProductEditor(id) {
   const editing = id ? Store.product(id) : null;
   const p = editing ? structuredClone(editing)
-    : { id: newId("p"), name: "", emoji: "📦", price: "", stock: "", category: "", costs: [{ name: "Materials", amount: "" }] };
+    : { id: newId("p"), name: "", emoji: "📦", image: "", price: "", stock: "", category: "", batchYield: 1, costs: [{ name: "Materials", amount: "" }] };
+  if (!p.batchYield) p.batchYield = 1;
   const emojis = ["🎂","🍢","🧴","👜","🍞","🍰","🧁","👗","💄","🕯️","☕","🍫","🥤","📦"];
 
   const dlg = openDialog(`
-    <div class="field"><label>Emoji</label>
-      <div style="display:flex;gap:7px;flex-wrap:wrap" id="emojiPick">
-        ${emojis.map((e) => `<button type="button" class="thumb" data-emoji="${e}" style="width:42px;height:42px;${e === p.emoji ? "outline:2px solid var(--blue);outline-offset:2px" : ""}">${e}</button>`).join("")}
+    <div class="field"><label>Product photo</label>
+      <div class="logo-row">
+        <div class="logo-preview" id="pPhoto" style="width:64px;height:64px;font-size:26px">${p.image ? `<img src="${p.image}" alt=""/>` : (p.emoji || "📦")}</div>
+        <div>
+          <input type="file" id="pImgFile" accept="image/png,image/jpeg,image/webp" hidden/>
+          <button type="button" class="btn ghost sm" id="pImgPick">${icon("upload", 16)} Upload photo</button>
+          <button type="button" class="btn ghost sm" id="pImgRemove" style="color:var(--warn)" ${p.image ? "" : "hidden"}>Remove</button>
+          <p class="help">Under 1MB. Or pick an emoji below.</p>
+        </div>
+      </div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:10px" id="emojiPick">
+        ${emojis.map((e) => `<button type="button" class="thumb" data-emoji="${e}" style="width:38px;height:38px;font-size:19px;${e === p.emoji && !p.image ? "outline:2px solid var(--orange);outline-offset:2px" : ""}">${e}</button>`).join("")}
       </div></div>
     <div class="field"><label>Name</label>
       <input class="input" id="pName" placeholder="e.g. Signature chocolate cake" value="${esc(p.name)}"/></div>
@@ -199,7 +213,10 @@ function openProductEditor(id) {
       <div class="field"><label>In stock <span class="help" style="display:inline">optional</span></label>
         <input class="input" id="pStock" inputmode="numeric" placeholder="0" value="${p.stock ?? ""}"/></div>
     </div>
-    <div class="field"><label>What it costs to make one</label>
+    <div class="field"><label>This recipe or batch makes</label>
+      <div class="input-money"><input class="input" id="pYield" inputmode="numeric" value="${p.batchYield}" style="padding-left:13px"/><span class="sym" style="left:auto;right:13px">units</span></div>
+      <p class="help">If a batch of ingredients makes many units (e.g. 40 popsicles), enter your costs for the whole batch below and set this. Trackit works out the cost per unit.</p></div>
+    <div class="field"><label id="costLabel">What the batch costs to make</label>
       <div class="cost-lines" id="costLines">${p.costs.map(costLineHTML).join("")}</div>
       <button type="button" class="add-cost" id="addCost">${icon("plus", 15)} Add a cost (packaging, transport, gas)</button>
       <p class="help" id="costHint"></p></div>
@@ -211,11 +228,26 @@ function openProductEditor(id) {
     </div>
   `, { title: editing ? "Edit product" : "New product" });
 
+  const photo = $("#pPhoto", dlg), imgFile = $("#pImgFile", dlg), imgRemove = $("#pImgRemove", dlg);
+  $("#pImgPick", dlg).addEventListener("click", () => imgFile.click());
+  imgFile.addEventListener("change", async () => {
+    const f = imgFile.files?.[0]; if (!f) return;
+    if (f.size > 1024 * 1024) { imgFile.value = ""; return toast("That image is over 1MB. Choose a smaller one.", "bad"); }
+    const url = await fileToImage(f, { max: 400, type: "image/jpeg", quality: 0.82 });
+    imgFile.value = "";
+    if (!url) return toast("Could not read that image.", "bad");
+    p.image = url; photo.innerHTML = `<img src="${url}" alt=""/>`; imgRemove.hidden = false;
+  });
+  imgRemove.addEventListener("click", () => { p.image = ""; photo.innerHTML = p.emoji || "📦"; imgRemove.hidden = true; });
+
   $$("#emojiPick [data-emoji]", dlg).forEach((el) => el.addEventListener("click", () => {
     p.emoji = el.dataset.emoji;
     $$("#emojiPick [data-emoji]", dlg).forEach((x) => (x.style.outline = "none"));
-    el.style.outline = "2px solid var(--blue)"; el.style.outlineOffset = "2px";
+    el.style.outline = "2px solid var(--orange)"; el.style.outlineOffset = "2px";
+    if (!p.image) photo.innerHTML = p.emoji;
   }));
+
+  $("#pYield", dlg).addEventListener("input", livePreview);
 
   function refreshCosts() { $("#costLines", dlg).innerHTML = p.costs.map(costLineHTML).join(""); wireCostLines(); livePreview(); }
   function wireCostLines() {
@@ -231,18 +263,21 @@ function openProductEditor(id) {
     p.name = $("#pName", dlg).value.trim();
     p.price = Number($("#pPrice", dlg).value) || 0;
     const st = $("#pStock", dlg).value; p.stock = st === "" ? undefined : Number(st) || 0;
+    p.batchYield = Math.max(1, Number($("#pYield", dlg).value) || 1);
   }
   function livePreview() {
     readInputs();
-    const cost = (p.costs || []).reduce((s, c) => s + (Number(c.amount) || 0), 0);
-    const profit = (Number(p.price) || 0) - cost;
+    const batch = (p.costs || []).reduce((s, c) => s + (Number(c.amount) || 0), 0);
+    const perUnitCost = p.batchYield > 1 ? batch / p.batchYield : batch;
+    const profit = (Number(p.price) || 0) - perUnitCost;
     const mp = p.price > 0 ? (profit / p.price) * 100 : 0, band = marginBand(mp);
-    $("#costHint", dlg).textContent = p.price > 0 ? (cost === 0
+    $("#costLabel", dlg).textContent = p.batchYield > 1 ? "What the batch costs to make" : "What it costs to make one";
+    $("#costHint", dlg).textContent = p.price > 0 ? (batch === 0
       ? "Did you count packaging, transport and gas? Each one makes the number honest."
-      : mp < 30 ? "Below a healthy 30%. Pricing can suggest a fairer price." : "Healthy margin. Nice.") : "";
+      : (p.batchYield > 1 ? `Batch cost ${naira(batch)} ÷ ${p.batchYield} = ${naira(perUnitCost)} per unit. ` : "") + (mp < 30 ? "Below a healthy 30%. Pricing can suggest a fairer price." : "Healthy margin. Nice.")) : "";
     $("#livePreview", dlg).innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center">
       <div><div class="help" style="font-weight:700;margin:0">Profit per unit</div>
-        <div style="font-family:var(--display);font-weight:600;font-size:24px;color:${profit < 0 ? "var(--warn)" : "var(--navy)"}">${naira(profit, { sign: profit > 0 })}</div></div>
+        <div style="font-family:var(--display);font-weight:800;font-size:24px;color:${profit < 0 ? "var(--warn)" : "var(--ink)"}">${naira(profit, { sign: profit > 0 })}</div></div>
       <div class="margin-tag ${band}" style="font-size:13px;padding:5px 11px">${pct(mp)} margin</div></div>`;
   }
   $("#pName", dlg).addEventListener("input", livePreview);
@@ -383,7 +418,7 @@ function salesLog(period) {
   if (!list.length) return `<p class="help">No sales in this window yet.</p>`;
   return list.map((s) => {
     const p = Store.product(s.productId); if (!p) return "";
-    return `<div class="act"><span class="ai">${p.emoji || "📦"}</span>
+    return `<div class="act"><span class="ai">${pThumb(p)}</span>
       <span class="info"><b>${esc(p.name)}</b><span>${s.qty} × ${naira(p.price)} · ${ago(s.at)}${s.paid ? "" : " · <b style='color:var(--mango)'>owing</b>"}</span></span>
       <button class="btn ghost sm" data-receipt="${s.id}">Receipt</button></div>`;
   }).join("");
@@ -620,7 +655,7 @@ export function invoiceDocHTML(inv) {
         ${b.payment ? esc(b.payment).split("\n").map((l) => `<div>${l}</div>`).join("") : `<div>WhatsApp / transfer</div><div class="who">${esc(b.owner)}</div>`}
       </div>
     </div>
-    <table>
+    <div class="doc-scroll"><table>
       <thead><tr><th>Description</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Subtotal</th></tr></thead>
       <tbody>
         ${rows}${fillers}
@@ -628,7 +663,7 @@ export function invoiceDocHTML(inv) {
         <tr class="sumrow"><td class="lbl" colspan="3">Subtotal</td><td class="r money">${naira(sub)}</td></tr>
         <tr class="sumrow grand"><td class="lbl" colspan="3">Grand Total</td><td class="r money">${naira(tot)}</td></tr>
       </tbody>
-    </table>
+    </table></div>
     <div class="inv-foot">
       <div>
         <h5>Term &amp; Condition</h5>
@@ -699,7 +734,7 @@ export const Shop = {
           <button class="btn wa sm" id="shareLink">${icon("share",16)} Share</button></div>
       </div>
       <div class="sec-head"><h2>In your shop</h2><span class="help" style="margin:0">${list.length} items</span></div>
-      ${list.length ? `<div class="shop-grid">${list.map((p) => `<div class="shop-card"><div class="ph">${p.emoji || "📦"}</div>
+      ${list.length ? `<div class="shop-grid">${list.map((p) => `<div class="shop-card"><div class="ph">${pThumb(p)}</div>
         <div class="cap"><b>${esc(p.name)}</b><div class="pr">${naira(p.price)}</div></div></div>`).join("")}</div>`
         : `<div class="empty"><p>Add products to fill your shop.</p></div>`}
     `;
@@ -722,7 +757,7 @@ function openShopPreview() {
   openDialog(`<p class="help" style="margin:-6px 0 16px">This is what a buyer sees.</p>
     <div class="shop-grid">${list.map((p) => {
       const order = `https://wa.me/${b.whatsapp}?text=${encodeURIComponent(`Hi ${b.name}, I want to order: ${p.name} (${naira(p.price)})`)}`;
-      return `<div class="shop-card"><div class="ph">${p.emoji || "📦"}</div>
+      return `<div class="shop-card"><div class="ph">${pThumb(p)}</div>
         <div class="cap"><b>${esc(p.name)}</b><div class="pr">${naira(p.price)}</div>
           <a class="btn wa sm block" href="${order}" target="_blank" rel="noopener" style="margin-top:8px;justify-content:center">Order</a></div></div>`;
     }).join("")}</div>
@@ -851,9 +886,10 @@ function billingCard() {
   const sub = Store.subscription();
   const eff = sub.status;
   const left = sub.daysLeft;
+  const planName = sub.plan === "weekly" ? "Weekly" : sub.plan === "monthly" ? "Monthly" : "";
   const status = {
     trial:    { label: `Free trial · ${left} ${left === 1 ? "day" : "days"} left`, cls: "sent" },
-    active:   { label: `Active · renews ${fmtDate(sub.renewsAt)}`, cls: "paid" },
+    active:   { label: `${planName} · renews ${fmtDate(sub.renewsAt)}`, cls: "paid" },
     canceled: { label: `Ending · access until ${fmtDate(sub.renewsAt)}`, cls: "overdue" },
     expired:  { label: "Not subscribed", cls: "draft" },
   }[eff] || { label: "—", cls: "draft" };
@@ -861,10 +897,10 @@ function billingCard() {
   let action = "";
   if (eff === "active") action = `<button class="btn ghost" id="bCancel" style="color:var(--warn)">Cancel subscription</button>`;
   else if (eff === "canceled") action = `<button class="btn primary" id="bResume">Resume subscription</button>`;
-  else action = `<button class="btn accent" id="bSubscribe">Subscribe · ${naira(SUB_PRICE)}/mo</button>`;
+  else action = `<button class="btn accent" id="bSubscribe">Choose a plan</button>`;
 
   return `
-    <div class="bill-row"><span class="bk">Plan</span><span class="bv">Trackit Monthly · ${naira(SUB_PRICE)}/month</span></div>
+    <div class="bill-row"><span class="bk">Plan</span><span class="bv">${naira(SUB_PRICE_WEEK)}/week · ${naira(SUB_PRICE)}/month</span></div>
     <div class="bill-row"><span class="bk">Status</span><span class="status ${status.cls}"><span class="d"></span>${status.label}</span></div>
     <div class="actions" style="margin-top:16px">
       ${action}
@@ -904,9 +940,9 @@ export const Paywall = {
         <p class="lede">Keep the full picture of your profit, your invoices and your shop.</p>
         <div class="plan">
           <span class="tag">${TRIAL_DAYS} days free, then</span>
-          <div class="price"><span class="amt">${naira(SUB_PRICE)}</span><span class="per">/ month</span></div>
+          <div class="price"><span class="amt">${naira(SUB_PRICE_WEEK)}</span><span class="per">/ week or ${naira(SUB_PRICE)} / month</span></div>
           <ul>${PLAN_FEATURES.map((f) => `<li><span class="ck">${icon("check", 13, 3)}</span>${f}</li>`).join("")}</ul>
-          <button class="btn accent block" id="subBtn" style="margin-top:20px">Subscribe for ${naira(SUB_PRICE)}/month</button>
+          <button class="btn accent block" id="subBtn" style="margin-top:20px">Choose a plan</button>
         </div>
         <p class="free-hook">Not ready? You can still <a class="link" data-free>price a product for free</a>.</p>
         <p class="fine">Cancel anytime. Your data stays safe while you decide.</p>
@@ -921,38 +957,45 @@ export const Paywall = {
 
 /* ---------- subscribe flow (dialog) — routed through the backend ---------- */
 export function openSubscribe() {
+  let plan = "monthly";
+  const planCard = (id, price, per, note, on) => `
+    <button type="button" class="plan-opt ${on ? "on" : ""}" data-plan="${id}">
+      <div class="po-price"><span class="amt">${naira(price)}</span><span class="per">/ ${per}</span></div>
+      <div class="po-note">${note}</div>
+    </button>`;
   const dlg = openDialog(`
-    <div class="plan" style="border:0;box-shadow:none;padding:0">
-      <div class="price"><span class="amt">${naira(SUB_PRICE)}</span><span class="per">/ month</span></div>
-      <p class="help" style="margin-top:4px">Renews monthly. Cancel anytime from Business settings.</p>
-      <ul style="margin-top:16px">${PLAN_FEATURES.map((f) => `<li><span class="ck">${icon("check", 13, 3)}</span>${f}</li>`).join("")}</ul>
+    <div class="plan-opts" id="planOpts">
+      ${planCard("weekly", SUB_PRICE_WEEK, "week", "Pay as you go", false)}
+      ${planCard("monthly", SUB_PRICE, "month", "Best value", true)}
     </div>
+    <ul class="plan" style="border:0;padding:0;margin:18px 0 0">${PLAN_FEATURES.map((f) => `<li><span class="ck">${icon("check", 13, 3)}</span>${f}</li>`).join("")}</ul>
     <div class="actions" style="margin-top:22px">
       <button class="btn ghost" data-close>Not now</button>
-      <button class="btn accent" id="payNow">${icon("check",18)} Subscribe · ${naira(SUB_PRICE)}/month</button>
+      <button class="btn accent" id="payNow"></button>
     </div>
-    <p class="fine" id="subNote" style="text-align:center"></p>
-  `, { title: "Subscribe to Trackit" });
+    <p class="fine" id="subNote" style="text-align:center">Cancel anytime from Business settings.</p>
+  `, { title: "Choose your plan" });
 
-  $("#payNow", dlg).addEventListener("click", async () => {
-    const btn = $("#payNow", dlg); btn.disabled = true;
+  const payBtn = $("#payNow", dlg);
+  const syncBtn = () => { payBtn.innerHTML = `${icon("check", 18)} Subscribe · ${plan === "weekly" ? naira(SUB_PRICE_WEEK) + "/week" : naira(SUB_PRICE) + "/month"}`; };
+  $$("#planOpts .plan-opt", dlg).forEach((el) => el.addEventListener("click", () => {
+    plan = el.dataset.plan;
+    $$("#planOpts .plan-opt", dlg).forEach((x) => x.classList.toggle("on", x === el));
+    syncBtn();
+  }));
+  syncBtn();
+
+  payBtn.addEventListener("click", async () => {
+    payBtn.disabled = true;
     try {
-      const init = await API.billingInitialize();
-      if (init.mode === "paystack") {
-        // hand off to Paystack's hosted checkout; we verify on return via ?ref
-        window.location.href = init.authorization_url;
-        return;
-      }
-      // mock mode (no Paystack secret key configured server-side)
-      const r = await API.billingMockActivate();
+      const init = await API.billingInitialize(plan);
+      if (init.mode === "paystack") { window.location.href = init.authorization_url; return; }
+      const r = await API.billingMockActivate(plan);
       Store.setSubscription(r.subscription);
       closeDialog();
       toast(`You're subscribed. Renews ${fmtDate(r.subscription.renewsAt)}.`, "good");
       go("home");
-    } catch (e) {
-      btn.disabled = false;
-      $("#subNote", dlg).textContent = e.message;
-    }
+    } catch (e) { payBtn.disabled = false; $("#subNote", dlg).textContent = e.message; }
   });
 }
 
@@ -1017,11 +1060,11 @@ function reportDocHTML(period) {
       <div class="cell"><div class="k">Owed to you</div><div class="v">${naira(r.owing)}</div></div>
     </div>
     <h4>Profit by product</h4>
-    <table>
+    <div class="doc-scroll"><table>
       <thead><tr><th>Product</th><th class="r">Units</th><th class="r">Revenue</th><th class="r">Cost</th><th class="r">Profit</th><th class="r">Margin</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot><tr><td>Total</td><td class="r">${r.products.reduce((s, p) => s + p.units, 0)}</td><td class="r">${naira(r.revenue)}</td><td class="r">${naira(r.cost)}</td><td class="r">${naira(r.profit)}</td><td class="r">${pct(r.margin)}</td></tr></tfoot>
-    </table>
+    </table></div>
     <p class="rp-note">Invoices issued: ${r.invoices.count} · billed ${naira(r.invoices.total)} · paid ${naira(r.invoices.paid)} · outstanding ${naira(r.invoices.outstanding)}.
     Profit is per product, before business running costs like rent and data.</p>
   </div>`;
@@ -1057,6 +1100,23 @@ function reportCSV(period) {
   downloadCSV(`trackit-report-${slug}.csv`, rows);
 }
 
+async function loadInsights(period) {
+  const panel = document.getElementById("insightsPanel");
+  if (!panel) return;
+  const b = Store.business(), r = reportData(period);
+  const summary = {
+    businessName: b.name, label: r.label, revenue: r.revenue, cost: r.cost, profit: r.profit,
+    margin: r.margin, count: r.count, owing: r.owing,
+    products: r.products.map((p) => ({ name: p.name, units: p.units, revenue: p.revenue, cost: p.cost, profit: p.profit })),
+  };
+  let insights = [], ai = false;
+  try { const res = await API.reportInsights(summary); insights = res.insights || []; ai = !!res.ai; }
+  catch { insights = ["Could not load insights right now. Try again in a moment."]; }
+  if (!document.getElementById("insightsPanel")) return; // navigated away
+  panel.innerHTML = `<div class="ih"><span class="badge-ai">${icon("spark", 13)} ${ai ? "AI insights" : "Insights"}</span><h3>What this means</h3></div>
+    <ul>${insights.map((i) => `<li><span class="dot"></span>${esc(i)}</li>`).join("")}</ul>`;
+}
+
 export const Reports = {
   html(params = {}) {
     const period = params.period || "month";
@@ -1070,6 +1130,10 @@ export const Reports = {
         ${[["week", "This week"], ["month", "This month"], ["lastmonth", "Last month"]].map(([p, l]) =>
           `<button class="pill ${p === period ? "on" : ""}" data-period="${p}">${l}</button>`).join("")}
       </div>
+      <div class="insights" id="insightsPanel">
+        <div class="ih"><span class="badge-ai">${icon("spark", 13)} Insights</span></div>
+        <p class="loading">Reading your numbers…</p>
+      </div>
       ${reportDocHTML(period)}
     `;
   },
@@ -1078,6 +1142,7 @@ export const Reports = {
     $$("[data-period]", root).forEach((el) => el.addEventListener("click", () => go("reports", { period: el.dataset.period })));
     $("[data-act='print']", root)?.addEventListener("click", () => printDoc(reportDocHTML(period)));
     $("[data-act='csv']", root)?.addEventListener("click", () => { reportCSV(period); toast("Report downloaded.", "good"); });
+    loadInsights(period);
   },
 };
 

@@ -427,6 +427,20 @@ input[type="range"] { accent-color: var(--orange); }
 .invoice-doc .inv-sign .who { font-weight: 800; text-transform: uppercase; }
 .invoice-doc .inv-sign .role { color: #5c574d; text-transform: uppercase; }
 
+/* product photos fill their rounded containers */
+.thumb, .act .ai, .shop-card .ph { overflow: hidden; }
+.thumb img, .act .ai img { width: 100%; height: 100%; object-fit: cover; }
+
+/* AI insights panel (reports) */
+.insights { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 20px; margin-bottom: 16px; }
+.insights .ih { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.insights .ih .badge-ai { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--orange); background: rgba(242,106,44,.14); padding: 4px 9px; border-radius: 999px; }
+.insights .ih h3 { font-family: var(--display); font-size: 19px; margin: 0; }
+.insights ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.insights li { display: flex; gap: 10px; font-size: 14px; line-height: 1.5; }
+.insights li .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--orange); margin-top: 7px; flex: none; }
+.insights .loading { color: var(--ink-3); font-size: 14px; }
+
 /* logo controls (settings) */
 .logo-row { display: flex; gap: 16px; align-items: center; }
 .logo-preview { width: 72px; height: 72px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface-2); display: grid; place-items: center; color: var(--ink-3); overflow: hidden; flex: none; }
@@ -518,6 +532,14 @@ input[type="range"] { accent-color: var(--orange); }
 .paywall .fine { font-size: 12.5px; color: var(--ink-3); margin-top: 16px; line-height: 1.5; }
 .paywall .free-hook { margin-top: 18px; font-size: 13.5px; color: var(--ink-2); }
 
+.plan-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.plan-opt { text-align: left; background: var(--surface-2); border: 2px solid var(--line); border-radius: 14px; padding: 14px 16px; color: inherit; }
+.plan-opt.on { border-color: var(--orange); background: rgba(242,106,44,.08); }
+.plan-opt .po-price { display: flex; align-items: baseline; gap: 4px; }
+.plan-opt .po-price .amt { font-family: var(--display); font-weight: 800; font-size: 26px; }
+.plan-opt .po-price .per { color: var(--ink-2); font-weight: 700; font-size: 13px; }
+.plan-opt .po-note { font-size: 12px; color: var(--ink-3); font-weight: 700; margin-top: 3px; }
+
 .bill-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 0; border-top: 1px solid var(--line-2); }
 .bill-row:first-of-type { border-top: 0; }
 .bill-row .bk { font-size: 13px; color: var(--ink-2); font-weight: 700; }
@@ -558,6 +580,29 @@ input[type="range"] { accent-color: var(--orange); }
   .page-actions .btn { flex: 1; }
 }
 @media (max-width: 420px) { .cols-4 { grid-template-columns: 1fr; } }
+
+/* keep wide tables/docs from breaking the page on small screens */
+.doc-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+@media (max-width: 768px) {
+  .report-doc, .invoice-doc { padding: 22px 18px; }
+  .report-doc .rp-sum { grid-template-columns: 1fr 1fr; }
+  .report-doc .rp-head, .invoice-doc .inv-top { flex-wrap: wrap; }
+  .report-doc table, .invoice-doc table { min-width: 460px; }
+  .invoice-doc { font-size: 11px; }
+  .invoice-doc .inv-title { font-size: 44px; }
+  .invoice-doc .inv-co .co-name { font-size: 22px; }
+  .invoice-doc .inv-meta, .invoice-doc .inv-parties { flex-wrap: wrap; gap: 14px; }
+  .invoice-doc .inv-foot { flex-direction: column; gap: 18px; }
+  .invoice-doc .inv-sign { text-align: left; }
+  .plan-opts { grid-template-columns: 1fr; }
+  .dialog .actions { flex-wrap: wrap; }
+  .dialog .actions .btn { min-width: 45%; }
+  .page-head { align-items: flex-start; }
+}
+@media (max-width: 460px) {
+  .report-doc .rp-sum { grid-template-columns: 1fr; }
+  .report-doc, .invoice-doc { padding: 18px 14px; }
+}
 
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.99); } to { opacity: 1; transform: none; } }

@@ -8,7 +8,8 @@ import { API } from "./api.js";
 
 /* ---- billing constants (display copy; server is authoritative) ---- */
 export const TRIAL_DAYS = 7;
-export const SUB_PRICE = 5000;     // ₦ per month
+export const SUB_PRICE = 5000;       // ₦ per month
+export const SUB_PRICE_WEEK = 1000;  // ₦ per week
 
 const CACHE_KEY = "trackit.cache";
 
@@ -133,8 +134,15 @@ export function invEffectiveStatus(inv) {
   return inv.status;
 }
 
-/* ---- money math (the profit engine) ---- */
-export const unitCost = (p) => (p.costs || []).reduce((s, c) => s + (Number(c.amount) || 0), 0);
+/* ---- money math (the profit engine) ----
+   batchYield lets a maker enter costs for a whole batch (e.g. a bag of
+   sugar that makes 40 popsicles) and get an honest per-unit cost. */
+export const unitCost = (p) => {
+  const total = (p.costs || []).reduce((s, c) => s + (Number(c.amount) || 0), 0);
+  const yld = Number(p.batchYield) || 1;
+  return yld > 1 ? total / yld : total;
+};
+export const batchCost = (p) => (p.costs || []).reduce((s, c) => s + (Number(c.amount) || 0), 0);
 export const unitProfit = (p) => (Number(p.price) || 0) - unitCost(p);
 export const marginPct = (p) => {
   const price = Number(p.price) || 0;

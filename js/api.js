@@ -42,12 +42,15 @@ export const API = {
   updateBusiness(patch) { return this.req("PUT", "/api/business", patch); },
 
   // billing
-  billingInitialize() { return this.req("POST", "/api/billing/initialize"); },
+  billingInitialize(plan) { return this.req("POST", "/api/billing/initialize", { plan }); },
   billingVerify(reference) { return this.req("POST", "/api/billing/verify", { reference }); },
-  billingMockActivate() { return this.req("POST", "/api/billing/mock-activate"); },
+  billingMockActivate(plan) { return this.req("POST", "/api/billing/mock-activate", { plan }); },
   billingCancel() { return this.req("POST", "/api/billing/cancel"); },
   billingResume() { return this.req("POST", "/api/billing/resume"); },
   billingDevExpire() { return this.req("POST", "/api/billing/dev-expire"); },
+
+  // reports
+  reportInsights(summary) { return this.req("POST", "/api/reports/insights", { summary }); },
 };
 
 export class AuthError extends Error {}

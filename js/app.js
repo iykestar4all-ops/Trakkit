@@ -2,8 +2,8 @@
    app.js — shell, auth gate, router, boot.
    ============================================================ */
 
-import { $, $$, icon, naira, esc, toast } from "./ui.js";
-import { Store, SUB_PRICE, TRIAL_DAYS } from "./store.js";
+import { $, $$, icon, naira, esc, toast, fileToImage } from "./ui.js";
+import { Store, SUB_PRICE, SUB_PRICE_WEEK, TRIAL_DAYS } from "./store.js";
 import { API, AuthError } from "./api.js";
 
 const NAV = [
@@ -86,7 +86,7 @@ function renderStrip() {
     const left = sub.daysLeft, low = left <= 2;
     strip.className = "status-strip" + (low ? " warn" : "");
     strip.innerHTML = `<span class="si">${icon("spark", 17)}</span>
-      <span class="grow"><b>${left} ${left === 1 ? "day" : "days"} left</b> in your free trial. Then ${naira(SUB_PRICE)} a month to keep going.</span>
+      <span class="grow"><b>${left} ${left === 1 ? "day" : "days"} left</b> in your free trial. Then ${naira(SUB_PRICE_WEEK)}/week or ${naira(SUB_PRICE)}/month.</span>
       <button class="btn ${low ? "accent" : "primary"} sm" data-subscribe>Subscribe</button>`;
     strip.hidden = false;
   } else if (sub.status === "canceled") {
@@ -151,6 +151,16 @@ function renderAuth() {
               <div class="field"><label>Business name</label><input class="input" id="aBiz" placeholder="e.g. Amara Bakes"/></div>
               <div class="field"><label>Your name</label><input class="input" id="aOwner" placeholder="e.g. Amara"/></div>
             </div>
+            <div class="field"><label>Business logo <span class="help" style="display:inline">optional</span></label>
+              <div class="logo-row">
+                <div class="logo-preview" id="authLogoPrev">${icon("upload", 22)}</div>
+                <div>
+                  <input type="file" id="authLogoFile" accept="image/png,image/jpeg,image/webp" hidden/>
+                  <button type="button" class="btn ghost sm" id="authLogoPick">${icon("upload", 16)} Upload logo</button>
+                  <p class="help">Shows in your dashboard and on invoices.</p>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="field"><label>Email</label><input class="input" id="aEmail" type="email" autocomplete="email" placeholder="you@example.com"/></div>
           <div class="field"><label>Password</label>
@@ -182,6 +192,17 @@ function renderAuth() {
   $$("#authMode button", view).forEach((b) => b.addEventListener("click", () => setMode(b.dataset.m)));
   $("[data-switch]", view).addEventListener("click", (e) => setMode(e.target.dataset.switch));
 
+  let logoData = null;
+  const logoFile = $("#authLogoFile", view);
+  $("#authLogoPick", view).addEventListener("click", () => logoFile.click());
+  logoFile.addEventListener("change", async () => {
+    const f = logoFile.files?.[0]; if (!f) return;
+    const url = await fileToImage(f, { max: 240, type: "image/png" });
+    if (url) { logoData = url; $("#authLogoPrev", view).innerHTML = `<img src="${url}" alt=""/>`; }
+    else toast("Could not read that image.", "bad");
+    logoFile.value = "";
+  });
+
   const pw = $("#aPass", view), pwToggle = $("#aPassToggle", view);
   pwToggle.addEventListener("click", () => {
     const show = pw.type === "password";
@@ -200,7 +221,7 @@ function renderAuth() {
     btn.disabled = true;
     try {
       const resp = mode === "signup"
-        ? await API.signup({ email, password, businessName: $("#aBiz", view).value.trim(), ownerName: $("#aOwner", view).value.trim() })
+        ? await API.signup({ email, password, businessName: $("#aBiz", view).value.trim(), ownerName: $("#aOwner", view).value.trim(), logo: logoData || "" })
         : await API.login({ email, password });
       await enterApp(resp);
     } catch (ex) {

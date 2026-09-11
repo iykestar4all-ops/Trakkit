@@ -18,6 +18,7 @@ import { db, save } from "./db.mjs";
 import { hashPassword, verifyPassword, newToken } from "./auth.mjs";
 import * as billing from "./billing.mjs";
 import * as paystack from "./paystack.mjs";
+import { generateInsights } from "./ai.mjs";
 import { defaultBusiness } from "./seed.mjs";
 
 const PORT = Number(process.env.PORT || 5050);
@@ -81,11 +82,15 @@ async function api(req, res, url) {
     if (password.length < 6) return send(res, 400, { error: "Password must be at least 6 characters." });
     if (db.data.emailIndex[email]) return send(res, 409, { error: "An account with this email already exists." });
 
+    if (typeof json.logo === "string" && json.logo.length > 700000)
+      return send(res, 413, { error: "Logo image is too large. Use a smaller file." });
     const uid = randomUUID();
     const { salt, hash } = hashPassword(password);
     db.data.users[uid] = { email, salt, hash, createdAt: Date.now() };
     db.data.emailIndex[email] = uid;
-    db.data.businesses[uid] = defaultBusiness(json.businessName, json.ownerName);
+    const biz = defaultBusiness(json.businessName, json.ownerName);
+    if (typeof json.logo === "string" && json.logo) biz.logo = json.logo;
+    db.data.businesses[uid] = biz;
     db.data.states[uid] = { products: [], sales: [], invoices: [], invoiceSeq: 1 }; // start empty; real business, real data
     db.data.subscriptions[uid] = billing.freshTrial();
     const token = newToken();
@@ -147,18 +152,21 @@ async function api(req, res, url) {
   }
 
   // ---- billing ----
+  const planOf = (j) => (billing.PLANS[j.plan] ? j.plan : "monthly");
+
   if (path === "/api/billing/initialize" && req.method === "POST") {
-    if (!paystack.enabled()) return send(res, 200, { mode: "mock" });
+    const plan = planOf(json);
+    if (!paystack.enabled()) return send(res, 200, { mode: "mock", plan });
     const reference = `TRK-${uid.slice(0, 8)}-${Date.now()}`;
     try {
       const data = await paystack.initializeTransaction({
         email: me.email,
-        amountKobo: billing.SUB_PRICE_KOBO,
+        amountKobo: billing.PLANS[plan].price * 100,
         reference,
         callbackUrl: `${origin(req)}/?ref=${reference}#/billing/callback`,
-        metadata: { userId: uid, plan: "monthly" },
+        metadata: { userId: uid, plan },
       });
-      db.data.payments[reference] = { userId: uid, amount: billing.SUB_PRICE, status: "pending", createdAt: Date.now() };
+      db.data.payments[reference] = { userId: uid, plan, amount: billing.PLANS[plan].price, status: "pending", createdAt: Date.now() };
       save();
       return send(res, 200, { mode: "paystack", authorization_url: data.authorization_url, reference });
     } catch (e) { return send(res, 502, { error: e.message }); }
@@ -170,7 +178,8 @@ async function api(req, res, url) {
     try {
       const tx = await paystack.verifyTransaction(reference);
       if (tx.status !== "success") return send(res, 402, { error: "Payment not completed." });
-      db.data.subscriptions[uid] = billing.activate(db.data.subscriptions[uid], 1);
+      const plan = db.data.payments[reference]?.plan || "monthly";
+      db.data.subscriptions[uid] = billing.activate(db.data.subscriptions[uid], plan);
       if (db.data.payments[reference]) db.data.payments[reference].status = "success";
       save();
       return send(res, 200, { subscription: billing.publicView(db.data.subscriptions[uid]) });
@@ -179,7 +188,7 @@ async function api(req, res, url) {
 
   if (path === "/api/billing/mock-activate" && req.method === "POST") {
     if (paystack.enabled()) return send(res, 400, { error: "Use the card checkout." });
-    db.data.subscriptions[uid] = billing.activate(db.data.subscriptions[uid], 1);
+    db.data.subscriptions[uid] = billing.activate(db.data.subscriptions[uid], planOf(json));
     save();
     return send(res, 200, { subscription: billing.publicView(db.data.subscriptions[uid]), mock: true });
   }
@@ -193,7 +202,7 @@ async function api(req, res, url) {
   if (path === "/api/billing/resume" && req.method === "POST") {
     const sub = db.data.subscriptions[uid];
     db.data.subscriptions[uid] = (sub.renewsAt && sub.renewsAt > Date.now())
-      ? { ...sub, status: "active" } : billing.activate(sub, 1);
+      ? { ...sub, status: "active" } : billing.activate(sub, sub.plan || "monthly");
     save();
     return send(res, 200, { subscription: billing.publicView(db.data.subscriptions[uid]) });
   }
@@ -203,6 +212,14 @@ async function api(req, res, url) {
     db.data.subscriptions[uid] = { ...sub, status: "trial", trialStartedAt: Date.now() - (billing.TRIAL_DAYS * billing.DAY + 1000) };
     save();
     return send(res, 200, { subscription: billing.publicView(db.data.subscriptions[uid]) });
+  }
+
+  // ---- AI insights for a report ----
+  if (path === "/api/reports/insights" && req.method === "POST") {
+    try {
+      const result = await generateInsights(json.summary || json || {});
+      return send(res, 200, result);
+    } catch (e) { return send(res, 200, { insights: [], ai: false, error: e.message }); }
   }
 
   return send(res, 404, { error: "Unknown endpoint." });
@@ -216,7 +233,8 @@ async function webhook(req, res) {
   if (json.event === "charge.success") {
     const uid = json.data?.metadata?.userId || db.data.payments[json.data?.reference]?.userId;
     if (uid && db.data.subscriptions[uid]) {
-      db.data.subscriptions[uid] = billing.activate(db.data.subscriptions[uid], 1);
+      const plan = json.data?.metadata?.plan || db.data.payments[json.data?.reference]?.plan || "monthly";
+      db.data.subscriptions[uid] = billing.activate(db.data.subscriptions[uid], plan);
       if (db.data.payments[json.data.reference]) db.data.payments[json.data.reference].status = "success";
       save();
     }

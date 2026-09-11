@@ -1,6 +1,6 @@
 /* Trackit service worker — offline shell cache.
    Bump CACHE when files change to invalidate. */
-const CACHE = "trackit-v8";
+const CACHE = "trackit-v9";
 const ASSETS = [
   "./",
   "./index.html",

@@ -1,16 +1,20 @@
 /* ============================================================
    billing.mjs — subscription state (server-authoritative).
+   Two plans: weekly (₦1,000 / 7 days) and monthly (₦5,000 / 30 days).
    ============================================================ */
 
 export const DAY = 86400000;
 export const TRIAL_DAYS = 7;
-export const SUB_PRICE = 5000;       // ₦ per month
-export const SUB_PRICE_KOBO = SUB_PRICE * 100;
-export const PERIOD_DAYS = 30;
+
+export const PLANS = {
+  weekly:  { price: 1000, days: 7,  label: "Weekly" },
+  monthly: { price: 5000, days: 30, label: "Monthly" },
+};
+export const SUB_PRICE = PLANS.monthly.price; // back-compat
 
 export function freshTrial() {
   const now = Date.now();
-  return { status: "trial", trialStartedAt: now, renewsAt: null, startedAt: now };
+  return { status: "trial", plan: null, trialStartedAt: now, renewsAt: null, startedAt: now };
 }
 
 export function effective(sub) {
@@ -29,26 +33,29 @@ export function daysLeft(sub) {
   return 0;
 }
 
-export function activate(sub, months = 1) {
+export function activate(sub, planName = "monthly") {
+  const plan = PLANS[planName] || PLANS.monthly;
   const now = Date.now();
   const base = Math.max(now, sub?.renewsAt || 0); // extend if still active
-  return { ...sub, status: "active", startedAt: sub?.startedAt || now, renewsAt: base + months * PERIOD_DAYS * DAY };
+  return { ...sub, status: "active", plan: planName, startedAt: sub?.startedAt || now, renewsAt: base + plan.days * DAY };
 }
 
-export function cancel(sub) {
-  return { ...sub, status: "canceled" };
-}
+export function cancel(sub) { return { ...sub, status: "canceled" }; }
 
-/* what the client needs to render the strip / paywall / billing card */
 export function publicView(sub) {
   const eff = effective(sub);
   return {
     status: eff,
+    plan: sub?.plan || null,
     daysLeft: daysLeft(sub),
     renewsAt: sub?.renewsAt || null,
     trialEndsAt: sub?.status === "trial" ? sub.trialStartedAt + TRIAL_DAYS * DAY : null,
-    priceNaira: SUB_PRICE,
+    priceNaira: PLANS.monthly.price,
     trialDays: TRIAL_DAYS,
     locked: eff === "expired",
+    plans: {
+      weekly: { price: PLANS.weekly.price, days: PLANS.weekly.days },
+      monthly: { price: PLANS.monthly.price, days: PLANS.monthly.days },
+    },
   };
 }
