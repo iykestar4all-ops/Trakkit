@@ -120,9 +120,12 @@ async function api(req, res, url) {
   if (path === "/api/me" && req.method === "GET") return send(res, 200, meView(uid));
 
   if (path === "/api/business" && req.method === "PUT") {
+    if (typeof json.logo === "string" && json.logo.length > 700000)
+      return send(res, 413, { error: "Logo image is too large. Use a smaller file." });
     const b = db.data.businesses[uid];
     const patch = {};
-    for (const k of ["name", "owner", "whatsapp", "shopSlug", "targetMargin"]) if (k in json) patch[k] = json[k];
+    for (const k of ["name", "owner", "whatsapp", "shopSlug", "targetMargin", "logo", "address", "payment"])
+      if (k in json) patch[k] = json[k];
     db.data.businesses[uid] = { ...b, ...patch };
     save();
     return send(res, 200, { business: db.data.businesses[uid] });

@@ -14,7 +14,7 @@ import {
   $, $$, naira, pct, icon, pageHead, donut, SEG_COLORS,
   openDialog, closeDialog, toast, ago, esc,
 } from "./ui.js";
-import { go, logout } from "./app.js";
+import { go, logout, refreshChrome } from "./app.js";
 
 /* ---------- shared helpers ---------- */
 function currentRoute() { return location.hash.replace("#/", "").split("?")[0] || "home"; }
@@ -575,12 +575,92 @@ function openInvoiceEditor(id) {
   });
 }
 
-/* ---------- invoice document (dialog, wide + printable) ---------- */
+/* ---------- invoice document (editorial, matches the reference) ---------- */
+export function invoiceDocHTML(inv) {
+  const b = Store.business();
+  const sub = invSubtotal(inv), tot = invTotal(inv);
+  const MIN_ROWS = 6;
+  const rows = inv.items.map((it) => `<tr>
+    <td class="desc">${esc(it.name)}</td>
+    <td class="r">${String(it.qty).padStart(2, "0")}</td>
+    <td class="r">${naira(it.price)}</td>
+    <td class="r money">${naira(it.price * it.qty)}</td></tr>`).join("");
+  const fillers = Array.from({ length: Math.max(0, MIN_ROWS - inv.items.length) },
+    () => `<tr class="filler"><td class="desc">.</td><td class="r">.</td><td class="r">.</td><td class="r">.</td></tr>`).join("");
+
+  const co = b.logo
+    ? `<img src="${b.logo}" alt="${esc(b.name)}"/>`
+    : `<div class="co-name">${esc(b.name)}</div>`;
+  const terms = inv.note || "Payment is due by the date above. Thank you for choosing us.";
+
+  return `<div class="invoice-doc">
+    <div class="inv-top">
+      <div class="inv-title">INVOICE</div>
+      <div class="inv-co">${co}</div>
+    </div>
+    <div class="inv-meta">
+      <div>
+        <div>Invoice No: ${esc(inv.number)}</div>
+        <div>Date: ${fmtDate(inv.issuedAt)}</div>
+        <div>Due Date: ${fmtDate(inv.dueAt)}</div>
+      </div>
+      <div class="r">
+        ${b.address ? esc(b.address).split("\n").map((l) => `<div>${l}</div>`).join("") : `<div>${esc(b.name)}</div>`}
+        ${b.whatsapp ? `<div>+${esc(b.whatsapp)}</div>` : ""}
+      </div>
+    </div>
+    <div class="inv-parties">
+      <div>
+        <h4>Bill To:</h4>
+        <div class="who">${esc(inv.customer.name || "—")}</div>
+        ${inv.customer.phone ? `<div>+${esc(inv.customer.phone)}</div>` : ""}
+      </div>
+      <div class="r">
+        <h4>Payment Method</h4>
+        ${b.payment ? esc(b.payment).split("\n").map((l) => `<div>${l}</div>`).join("") : `<div>WhatsApp / transfer</div><div class="who">${esc(b.owner)}</div>`}
+      </div>
+    </div>
+    <table>
+      <thead><tr><th>Description</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Subtotal</th></tr></thead>
+      <tbody>
+        ${rows}${fillers}
+        ${inv.discount ? `<tr class="sumrow"><td class="lbl" colspan="3">Discount</td><td class="r money">−${naira(inv.discount)}</td></tr>` : ""}
+        <tr class="sumrow"><td class="lbl" colspan="3">Subtotal</td><td class="r money">${naira(sub)}</td></tr>
+        <tr class="sumrow grand"><td class="lbl" colspan="3">Grand Total</td><td class="r money">${naira(tot)}</td></tr>
+      </tbody>
+    </table>
+    <div class="inv-foot">
+      <div>
+        <h5>Term &amp; Condition</h5>
+        <p>${esc(terms)}</p>
+      </div>
+      <div>
+        <h5>For any questions</h5>
+        <p>${b.whatsapp ? "Contact +" + esc(b.whatsapp) : "Contact us anytime."}<br/>${esc(b.owner)}</p>
+      </div>
+      <div class="inv-sign">
+        <div class="sig">${esc(b.owner || b.name)}</div>
+        <div class="who">${esc(b.owner || b.name)}</div>
+        <div class="role">Owner</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function printDoc(html) {
+  const root = document.getElementById("printRoot");
+  root.innerHTML = html;
+  document.body.classList.add("printing");
+  const done = () => { document.body.classList.remove("printing"); root.innerHTML = ""; window.removeEventListener("afterprint", done); };
+  window.addEventListener("afterprint", done);
+  window.print();
+  setTimeout(done, 1500); // fallback if afterprint doesn't fire
+}
+
 function openInvoiceDoc(id) {
   const inv = Store.invoice(id); if (!inv) return;
   const b = Store.business();
-  const st = invEffectiveStatus(inv);
-  const sub = invSubtotal(inv), tot = invTotal(inv);
+  const tot = invTotal(inv);
   const waText = [`*${b.name}* — Invoice ${inv.number}`, `Bill to: ${inv.customer.name}`, ``,
     ...inv.items.map((it) => `${it.qty} × ${it.name} — ${naira(it.price * it.qty)}`),
     inv.discount ? `Discount: −${naira(inv.discount)}` : ``, `*Total: ${naira(tot)}*`, ``,
@@ -588,27 +668,7 @@ function openInvoiceDoc(id) {
   const wa = inv.customer.phone ? `https://wa.me/${inv.customer.phone}?text=${encodeURIComponent(waText)}` : `https://wa.me/?text=${encodeURIComponent(waText)}`;
 
   const dlg = openDialog(`
-    <div class="invoice-doc" id="invDoc">
-      <div class="idh">
-        <div><div class="biz-name">${esc(b.name)}</div><div class="muted">${esc(b.owner)}${b.whatsapp ? " · " + esc(b.whatsapp) : ""}</div></div>
-        <div class="inv-badge"><div class="lbl">Invoice</div><div class="no">${esc(inv.number)}</div>
-          <div style="margin-top:6px"><span class="status ${st}"><span class="d"></span>${st[0].toUpperCase() + st.slice(1)}</span></div></div>
-      </div>
-      <div class="parties">
-        <div><div class="lbl">Bill to</div><div style="font-weight:700;margin-top:3px">${esc(inv.customer.name || "—")}</div>${inv.customer.phone ? `<div class="muted">${esc(inv.customer.phone)}</div>` : ""}</div>
-        <div style="text-align:right"><div class="lbl">Issued</div><div style="margin-top:3px">${fmtDate(inv.issuedAt)}</div>
-          <div class="lbl" style="margin-top:8px">Due</div><div>${fmtDate(inv.dueAt)}</div></div>
-      </div>
-      <table><thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Amount</th></tr></thead>
-        <tbody>${inv.items.map((it) => `<tr><td>${esc(it.name)}</td><td class="r">${it.qty}</td><td class="r">${naira(it.price)}</td><td class="r">${naira(it.price * it.qty)}</td></tr>`).join("")}</tbody></table>
-      <div class="tot">
-        <div class="tl"><span class="muted">Subtotal</span><span class="money">${naira(sub)}</span></div>
-        ${inv.discount ? `<div class="tl"><span class="muted">Discount</span><span class="money">−${naira(inv.discount)}</span></div>` : ""}
-        <div class="tl grand"><span>Total</span><span class="money">${naira(tot)}</span></div>
-      </div>
-      ${inv.note ? `<div class="pay-note">${esc(inv.note)}</div>` : ""}
-      <div class="thanks">Thank you for your business.</div>
-    </div>
+    ${invoiceDocHTML(inv)}
     <div class="actions" style="flex-wrap:wrap">
       <button class="btn ghost" id="editInv">${icon("edit",17)} Edit</button>
       <button class="btn ghost" id="printInv">${icon("print",17)} Print / PDF</button>
@@ -618,9 +678,8 @@ function openInvoiceDoc(id) {
   `, { title: "", wide: true });
 
   $("#editInv", dlg).addEventListener("click", () => { closeDialog(); openInvoiceEditor(inv.id); });
-  $("#printInv", dlg).addEventListener("click", () => window.print());
+  $("#printInv", dlg).addEventListener("click", () => printDoc(invoiceDocHTML(inv)));
   $("#markPaid", dlg)?.addEventListener("click", () => { Store.setInvoiceStatus(inv.id, "paid"); closeDialog(); toast("Marked as paid.", "good"); go("invoices"); });
-  // if opened fresh (draft), promote to "sent" once the owner sends it
   $(".btn.wa", dlg)?.addEventListener("click", () => { if (inv.status === "draft") Store.setInvoiceStatus(inv.id, "sent"); });
 }
 
@@ -692,6 +751,27 @@ export const Settings = {
         <div class="actions" style="justify-content:flex-end"><button class="btn primary" id="sSave">Save changes</button></div>
       </div>
 
+      <div class="sec-head" style="max-width:560px"><h2>Logo &amp; invoice details</h2></div>
+      <div class="card" style="max-width:560px">
+        <div class="field"><label>Business logo</label>
+          <div class="logo-row">
+            <div class="logo-preview" id="logoPreview">${b.logo ? `<img src="${b.logo}" alt=""/>` : icon("upload", 22)}</div>
+            <div>
+              <input type="file" id="logoFile" accept="image/png,image/jpeg,image/webp" hidden/>
+              <button class="btn ghost sm" id="logoPick">${icon("upload", 16)} Upload logo</button>
+              <button class="btn ghost sm" id="logoRemove" style="color:var(--warn)" ${b.logo ? "" : "hidden"}>Remove</button>
+              <p class="help">PNG or JPG. Appears on your invoices and in the sidebar.</p>
+            </div>
+          </div>
+        </div>
+        <div class="field"><label>Business address <span class="help" style="display:inline">optional</span></label>
+          <textarea class="input" id="sAddress" placeholder="12 Market Rd, Lagos">${esc(b.address || "")}</textarea></div>
+        <div class="field"><label>Payment details <span class="help" style="display:inline">optional</span></label>
+          <textarea class="input" id="sPayment" placeholder="GTBank 0123456789 — ${esc(b.name)}">${esc(b.payment || "")}</textarea>
+          <p class="help">Shown as “Payment Method” on your invoices.</p></div>
+        <div class="actions" style="justify-content:flex-end"><button class="btn primary" id="sSaveInv">Save invoice details</button></div>
+      </div>
+
       <div class="sec-head" style="max-width:560px"><h2>Billing</h2></div>
       <div class="card" style="max-width:560px">${billingCard()}</div>
 
@@ -714,9 +794,57 @@ export const Settings = {
       toast("Saved.", "good"); go("home");
     });
     $("#sLogout", root)?.addEventListener("click", () => logout());
+
+    // logo upload
+    const file = $("#logoFile", root), preview = $("#logoPreview", root), remove = $("#logoRemove", root);
+    $("#logoPick", root)?.addEventListener("click", () => file.click());
+    file?.addEventListener("change", () => {
+      const f = file.files?.[0]; if (!f) return;
+      resizeToDataUrl(f, 240, (dataUrl) => {
+        if (!dataUrl) return toast("Could not read that image.", "bad");
+        Store.saveBusiness({ logo: dataUrl });
+        preview.innerHTML = `<img src="${dataUrl}" alt=""/>`;
+        remove.hidden = false;
+        refreshChrome();
+        toast("Logo saved.", "good");
+      });
+      file.value = "";
+    });
+    remove?.addEventListener("click", () => {
+      Store.saveBusiness({ logo: "" });
+      preview.innerHTML = icon("upload", 22);
+      remove.hidden = true;
+      refreshChrome();
+      toast("Logo removed.");
+    });
+
+    $("#sSaveInv", root)?.addEventListener("click", () => {
+      Store.saveBusiness({ address: $("#sAddress", root).value.trim(), payment: $("#sPayment", root).value.trim() });
+      toast("Invoice details saved.", "good");
+    });
+
     wireBilling(root);
   },
 };
+
+/* client-side image resize -> small data URL for the logo */
+function resizeToDataUrl(file, max, cb) {
+  const reader = new FileReader();
+  reader.onerror = () => cb(null);
+  reader.onload = () => {
+    const img = new Image();
+    img.onerror = () => cb(null);
+    img.onload = () => {
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale)), h = Math.max(1, Math.round(img.height * scale));
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      try { cb(c.toDataURL("image/png")); } catch { cb(null); }
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
 
 /* ---------- billing card (inside Business settings) ---------- */
 function billingCard() {
@@ -828,7 +956,132 @@ export function openSubscribe() {
   });
 }
 
+/* ============================================================
+   REPORTS — comprehensive weekly / monthly export
+   ============================================================ */
+function reportRange(period) {
+  const now = new Date();
+  if (period === "week") return { from: Date.now() - 7 * 86400000, to: Date.now(), label: "Last 7 days" };
+  if (period === "lastmonth") {
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth(), 1).getTime() - 1;
+    return { from: start.getTime(), to: end, label: start.toLocaleDateString("en-NG", { month: "long", year: "numeric" }) };
+  }
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  return { from: start.getTime(), to: Date.now(), label: now.toLocaleDateString("en-NG", { month: "long", year: "numeric" }) };
+}
+function reportData(period) {
+  const { from, to, label } = reportRange(period);
+  const sales = Store.sales().filter((s) => s.at >= from && s.at <= to);
+  const byId = {}; let revenue = 0, cost = 0, profit = 0, owing = 0;
+  for (const s of sales) {
+    const p = Store.product(s.productId); if (!p) continue;
+    const rev = (Number(p.price) || 0) * s.qty, cst = unitCost(p) * s.qty;
+    revenue += rev; cost += cst; profit += rev - cst; if (!s.paid) owing += rev;
+    const e = byId[p.id] || (byId[p.id] = { name: p.name, emoji: p.emoji, units: 0, revenue: 0, cost: 0, profit: 0 });
+    e.units += s.qty; e.revenue += rev; e.cost += cst; e.profit += rev - cst;
+  }
+  const products = Object.values(byId).sort((a, b) => b.profit - a.profit);
+  const invs = Store.invoices().filter((i) => i.issuedAt >= from && i.issuedAt <= to);
+  const invTot = invs.reduce((s, i) => s + invTotal(i), 0);
+  const invPaid = invs.filter((i) => i.status === "paid").reduce((s, i) => s + invTotal(i), 0);
+  const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
+  return { label, from, to, count: sales.length, revenue, cost, profit, owing, margin, products,
+    invoices: { count: invs.length, total: invTot, paid: invPaid, outstanding: invTot - invPaid } };
+}
+
+function reportDocHTML(period) {
+  const b = Store.business();
+  const r = reportData(period);
+  const brand = b.logo ? `<img src="${b.logo}" alt="${esc(b.name)}"/>` : `<div class="biz">${esc(b.name)}</div>`;
+  const rows = r.products.length
+    ? r.products.map((p) => `<tr>
+        <td>${p.emoji || "📦"} ${esc(p.name)}</td>
+        <td class="r">${p.units}</td>
+        <td class="r">${naira(p.revenue)}</td>
+        <td class="r">${naira(p.cost)}</td>
+        <td class="r">${naira(p.profit)}</td>
+        <td class="r">${p.revenue > 0 ? pct((p.profit / p.revenue) * 100) : "—"}</td></tr>`).join("")
+    : `<tr><td colspan="6" style="color:#9aa0af">No sales in this period.</td></tr>`;
+  return `<div class="report-doc">
+    <div class="rp-head">
+      <div><div class="kicker">Business report</div>${brand}<div class="muted">${esc(r.label)}</div></div>
+      <div style="text-align:right"><div class="muted">Generated</div><div style="font-weight:800">${fmtDate(Date.now())}</div></div>
+    </div>
+    <div class="rp-sum">
+      <div class="cell"><div class="k">Revenue</div><div class="v">${naira(r.revenue)}</div></div>
+      <div class="cell"><div class="k">Cost of goods</div><div class="v">${naira(r.cost)}</div></div>
+      <div class="cell"><div class="k">Profit</div><div class="v good">${naira(r.profit)}</div></div>
+      <div class="cell"><div class="k">Profit margin</div><div class="v">${pct(r.margin)}</div></div>
+      <div class="cell"><div class="k">Sales</div><div class="v">${r.count}</div></div>
+      <div class="cell"><div class="k">Owed to you</div><div class="v">${naira(r.owing)}</div></div>
+    </div>
+    <h4>Profit by product</h4>
+    <table>
+      <thead><tr><th>Product</th><th class="r">Units</th><th class="r">Revenue</th><th class="r">Cost</th><th class="r">Profit</th><th class="r">Margin</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr><td>Total</td><td class="r">${r.products.reduce((s, p) => s + p.units, 0)}</td><td class="r">${naira(r.revenue)}</td><td class="r">${naira(r.cost)}</td><td class="r">${naira(r.profit)}</td><td class="r">${pct(r.margin)}</td></tr></tfoot>
+    </table>
+    <p class="rp-note">Invoices issued: ${r.invoices.count} · billed ${naira(r.invoices.total)} · paid ${naira(r.invoices.paid)} · outstanding ${naira(r.invoices.outstanding)}.
+    Profit is per product, before business running costs like rent and data.</p>
+  </div>`;
+}
+
+function downloadCSV(filename, rows) {
+  const csv = rows.map((r) => r.map((c) => {
+    const s = String(c ?? "");
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }).join(",")).join("\r\n");
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function reportCSV(period) {
+  const b = Store.business();
+  const r = reportData(period);
+  const rows = [
+    [`${b.name} — Business report`],
+    [`Period`, r.label],
+    [`Generated`, fmtDate(Date.now())],
+    [],
+    [`Revenue`, r.revenue], [`Cost of goods`, r.cost], [`Profit`, r.profit],
+    [`Profit margin %`, Math.round(r.margin)], [`Sales`, r.count], [`Owed to you`, r.owing],
+    [],
+    [`Product`, `Units`, `Revenue`, `Cost`, `Profit`, `Margin %`],
+    ...r.products.map((p) => [p.name, p.units, p.revenue, p.cost, p.profit, p.revenue > 0 ? Math.round((p.profit / p.revenue) * 100) : 0]),
+    [`Total`, r.products.reduce((s, p) => s + p.units, 0), r.revenue, r.cost, r.profit, Math.round(r.margin)],
+  ];
+  const slug = r.label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  downloadCSV(`trackit-report-${slug}.csv`, rows);
+}
+
+export const Reports = {
+  html(params = {}) {
+    const period = params.period || "month";
+    return `
+      ${pageHead({ title: "Reports", intro: "A clear read on where your money went. Export it weekly or monthly.",
+        actions: [
+          { id: "csv", label: "Download CSV", icon: "download", kind: "ghost" },
+          { id: "print", label: "Print / PDF", icon: "print", kind: "primary" },
+        ] })}
+      <div class="pill-row" style="margin-bottom:18px">
+        ${[["week", "This week"], ["month", "This month"], ["lastmonth", "Last month"]].map(([p, l]) =>
+          `<button class="pill ${p === period ? "on" : ""}" data-period="${p}">${l}</button>`).join("")}
+      </div>
+      ${reportDocHTML(period)}
+    `;
+  },
+  mount(root, params = {}) {
+    const period = params.period || "month";
+    $$("[data-period]", root).forEach((el) => el.addEventListener("click", () => go("reports", { period: el.dataset.period })));
+    $("[data-act='print']", root)?.addEventListener("click", () => printDoc(reportDocHTML(period)));
+    $("[data-act='csv']", root)?.addEventListener("click", () => { reportCSV(period); toast("Report downloaded.", "good"); });
+  },
+};
+
 export const SCREENS = {
   home: Home, products: Products, pricing: Calculator, sales: Sales,
-  invoices: Invoices, shop: Shop, settings: Settings, paywall: Paywall,
+  invoices: Invoices, reports: Reports, shop: Shop, settings: Settings, paywall: Paywall,
 };

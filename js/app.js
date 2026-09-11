@@ -12,6 +12,7 @@ const NAV = [
   { route: "pricing", label: "Pricing", ic: "calc" },
   { route: "sales", label: "Sales", ic: "chart" },
   { route: "invoices", label: "Invoices", ic: "invoice" },
+  { route: "reports", label: "Reports", ic: "report" },
   { route: "shop", label: "Shop", ic: "shop" },
   { sep: true },
   { route: "settings", label: "Business", ic: "settings" },
@@ -19,6 +20,27 @@ const NAV = [
 const FREE_WHEN_LOCKED = ["pricing"]; // the calculator stays free — the spread hook
 
 let SCREENS = null, MOD = null;
+
+/* ---------- theme ---------- */
+const THEME_KEY = "trackit.theme";
+function applyTheme(theme) {
+  const t = theme === "light" ? "light" : "dark";
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem(THEME_KEY, t); } catch {}
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = t === "dark" ? "#100f0e" : "#f5f3ef";
+  const btn = document.getElementById("themeToggle");
+  if (btn) btn.innerHTML = icon(t === "dark" ? "sun" : "moon", 19);
+}
+function initTheme() {
+  let stored = "dark";
+  try { stored = localStorage.getItem(THEME_KEY) || "dark"; } catch {}
+  applyTheme(stored);
+  document.getElementById("themeToggle")?.addEventListener("click", () => {
+    applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+  });
+}
+initTheme();
 
 /* ---------- routing ---------- */
 function parseHash() {
@@ -37,9 +59,12 @@ export function go(route, params = {}) {
 }
 
 /* ---------- chrome ---------- */
+export function refreshChrome() { renderChrome(); }
+
 function renderChrome() {
   const b = Store.business();
-  const markImg = `<img src="./assets/icon.svg" alt="" style="width:100%;height:100%;border-radius:inherit"/>`;
+  const src = b.logo || "./assets/icon.svg";
+  const markImg = `<img src="${src}" alt="" style="width:100%;height:100%;border-radius:inherit;object-fit:contain"/>`;
   $("#brandMark").innerHTML = markImg;
   $("#brandMarkSm").innerHTML = markImg;
   $("#nav").innerHTML = NAV.map((n) => n.sep ? `<div class="sep"></div>`

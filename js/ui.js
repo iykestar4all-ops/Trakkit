@@ -48,6 +48,10 @@ const I = {
   arrowRight: 'M5 12h14m0 0-6-6m6 6-6 6',
   eye: 'M12 5c-5 0-9 4.2-10 7 1 2.8 5 7 10 7s9-4.2 10-7c-1-2.8-5-7-10-7Zm0 10a3 3 0 1 1 0-6 3 3 0 0 1 0 6Z',
   eyeOff: 'M3 3l18 18M10.6 10.6a3 3 0 0 0 4.2 4.2M9.4 5.1A9.7 9.7 0 0 1 12 5c5 0 9 4.2 10 7a16 16 0 0 1-3 3.9M6.2 6.2A15.9 15.9 0 0 0 2 12c1 2.8 5 7 10 7 1 0 2-.2 2.9-.5',
+  sun: 'M12 4V2m0 20v-2m8-8h2M2 12h2m13.7-5.7 1.4-1.4M4.9 19.1l1.4-1.4m0-11.4L4.9 4.9m14.2 14.2-1.4-1.4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z',
+  moon: 'M21 13a8.5 8.5 0 0 1-10.9-11A8.5 8.5 0 1 0 21 13Z',
+  upload: 'M12 16V4m0 0 4 4m-4-4-4 4M5 20h14',
+  report: 'M9 17v-5m3 5v-8m3 8v-3M5 3h11l4 4v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z',
 };
 export function icon(name, size = 22, sw = 2) {
   const d = I[name] || "";
@@ -87,7 +91,7 @@ export function donut(segments, centerBig, centerSub) {
   }).join("");
   return `<div class="donut">
     <svg viewBox="0 0 200 200" width="200" height="200">
-      <circle cx="100" cy="100" r="${R}" fill="none" stroke="#2a2724" stroke-width="20"/>
+      <circle cx="100" cy="100" r="${R}" fill="none" stroke="var(--track)" stroke-width="20"/>
       ${arcs}
     </svg>
     <div class="center"><div class="big">${centerBig}</div><div class="sub">${centerSub}</div></div>
