@@ -282,7 +282,14 @@ async function boot() {
     showAuth();
   }
 
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(() => {});
+  if ("serviceWorker" in navigator) {
+    // auto-reload once when a new version takes over, so updates are seamless
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (refreshing) return; refreshing = true; location.reload();
+    });
+    navigator.serviceWorker.register("./sw.js").then((reg) => reg.update()).catch(() => {});
+  }
 }
 
 boot();
