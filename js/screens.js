@@ -199,7 +199,8 @@ function openProductEditor(id) {
           <input type="file" id="pImgFile" accept="image/png,image/jpeg,image/webp" hidden/>
           <button type="button" class="btn ghost sm" id="pImgPick">${icon("upload", 16)} Upload photo</button>
           <button type="button" class="btn ghost sm" id="pImgRemove" style="color:var(--warn)" ${p.image ? "" : "hidden"}>Remove</button>
-          <p class="help">Under 1MB. Or pick an emoji below.</p>
+          <button type="button" class="btn ghost sm" id="pRefine">${icon("spark", 16)} Refine with AI <span class="soon">soon</span></button>
+          <p class="help">Under 1MB. Or pick an emoji below. Refine will clean up a rough photo into a tidy storefront image.</p>
         </div>
       </div>
       <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:10px" id="emojiPick">
@@ -239,6 +240,7 @@ function openProductEditor(id) {
     p.image = url; photo.innerHTML = `<img src="${url}" alt=""/>`; imgRemove.hidden = false;
   });
   imgRemove.addEventListener("click", () => { p.image = ""; photo.innerHTML = p.emoji || "📦"; imgRemove.hidden = true; });
+  $("#pRefine", dlg).addEventListener("click", () => toast("AI photo cleanup is coming soon. Upload a clear photo for now.", "good"));
 
   $$("#emojiPick [data-emoji]", dlg).forEach((el) => el.addEventListener("click", () => {
     p.emoji = el.dataset.emoji;

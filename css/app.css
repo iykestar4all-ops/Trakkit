@@ -441,6 +441,9 @@ input[type="range"] { accent-color: var(--orange); }
 .insights li .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--orange); margin-top: 7px; flex: none; }
 .insights .loading { color: var(--ink-3); font-size: 14px; }
 
+/* "coming soon" chip on a button */
+.soon { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; background: var(--orange); color: #fff; padding: 2px 6px; border-radius: 999px; margin-left: 2px; }
+
 /* logo controls (settings) */
 .logo-row { display: flex; gap: 16px; align-items: center; }
 .logo-preview { width: 72px; height: 72px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface-2); display: grid; place-items: center; color: var(--ink-3); overflow: hidden; flex: none; }
