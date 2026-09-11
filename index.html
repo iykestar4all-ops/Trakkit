@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>Trackit — Know if you're actually making money</title>
+  <meta name="description" content="Trackit shows small business owners their true profit per product, flags underpricing, and turns it into a daily money habit." />
+  <link rel="manifest" href="./app.webmanifest" />
+  <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="./assets/icon.svg" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400;1,9..144,500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="./css/app.css" />
+</head>
+<body>
+  <div id="authView" hidden></div>
+
+  <div class="app" id="app" hidden>
+    <!-- Sidebar (desktop) / slide-in drawer (mobile) -->
+    <aside class="sidebar" id="sidebar" aria-label="Primary">
+      <a class="wordmark" href="#/home" aria-label="Trackit home">
+        <span class="mark" id="brandMark"></span>
+        <span class="wm-text">Trackit</span>
+      </a>
+      <nav class="nav" id="nav"></nav>
+      <button class="biz" id="bizChip" aria-label="Business settings"></button>
+    </aside>
+
+    <!-- Backdrop for the mobile drawer -->
+    <div class="drawer-scrim" id="drawerScrim" hidden></div>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="hamburger" id="hamburger" aria-label="Open menu">
+          <span></span><span></span><span></span>
+        </button>
+        <a class="wordmark sm" href="#/home">
+          <span class="mark" id="brandMarkSm"></span><span class="wm-text">Trackit</span>
+        </a>
+      </header>
+      <div class="content" id="content" aria-live="polite">
+        <div class="status-strip" id="statusStrip" hidden></div>
+        <div id="screen"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Overlay host for dialogs / invoice preview -->
+  <div class="overlay" id="overlay" hidden></div>
+  <div class="toast-host" id="toastHost" aria-live="assertive"></div>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

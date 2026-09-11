@@ -1,0 +1,16 @@
+{
+  "name": "Trackit",
+  "short_name": "Trackit",
+  "description": "Know if you're actually making money. Profit per product, underpricing alerts, and a shop link that closes on WhatsApp.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#19244e",
+  "theme_color": "#f6f7fb",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    { "src": "./assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "./assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

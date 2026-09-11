@@ -1,0 +1,12 @@
+# dependencies
+node_modules/
+
+# secrets
+.env
+
+# per-user datastore — never commit
+server/data/
+
+# misc
+*.log
+.DS_Store

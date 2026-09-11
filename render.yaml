@@ -1,0 +1,30 @@
+# Render blueprint. In Render: New + → Blueprint → connect this repo.
+# https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: trackit
+    runtime: node
+    plan: free                # upgrade to "starter" to attach the disk below
+    buildCommand: npm install  # no dependencies; runs instantly
+    startCommand: npm start    # -> node server/index.mjs
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      # Set this in the Render dashboard (Environment tab). Never commit a real key.
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      # Render provides PORT automatically; the server reads it.
+
+    # ---- Persistent data (recommended before real use) ----
+    # The free plan has no persistent disk, so accounts reset when the
+    # service restarts. To keep data, switch plan to "starter" (paid) and
+    # uncomment these two blocks:
+    #
+    # envVars additionally:
+    #   - key: TRACKIT_DATA_DIR
+    #     value: /var/data/trackit
+    #
+    # disk:
+    #   name: trackit-data
+    #   mountPath: /var/data
+    #   sizeGB: 1

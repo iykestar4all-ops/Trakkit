@@ -1,0 +1,13 @@
+{
+  "name": "trackit",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Trackit — know if you're actually making money. Profit clarity for small business owners.",
+  "type": "module",
+  "scripts": {
+    "start": "node server/index.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
