@@ -55,6 +55,10 @@ body {
 button { font-family: inherit; cursor: pointer; color: inherit; }
 img { max-width: 100%; display: block; }
 a { color: inherit; }
+/* The hidden attribute must always win — several full-screen elements
+   (#overlay, #app, .status-strip) set their own display, which would
+   otherwise defeat [hidden] and leave an invisible click-blocking layer. */
+[hidden] { display: none !important; }
 
 /* number figures line up */
 .num, .stat .v, .kpi .v, .hero .amount, .amt, .money { font-variant-numeric: tabular-nums; }
