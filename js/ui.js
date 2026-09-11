@@ -85,7 +85,7 @@ export function donut(segments, centerBig, centerSub) {
   }).join("");
   return `<div class="donut">
     <svg viewBox="0 0 200 200" width="200" height="200">
-      <circle cx="100" cy="100" r="${R}" fill="none" stroke="#eef0f7" stroke-width="20"/>
+      <circle cx="100" cy="100" r="${R}" fill="none" stroke="#2a2724" stroke-width="20"/>
       ${arcs}
     </svg>
     <div class="center"><div class="big">${centerBig}</div><div class="sub">${centerSub}</div></div>
@@ -93,7 +93,7 @@ export function donut(segments, centerBig, centerSub) {
 }
 
 /* palette for segments / legend */
-export const SEG_COLORS = ["#253c96", "#f36b2e", "#12a06a", "#f59a1e", "#7c5cff", "#c4e7e5"];
+export const SEG_COLORS = ["#f26a2c", "#4ec98a", "#f7a53b", "#6aa8ff", "#b98bff", "#ff8fa3"];
 
 /* ---- overlay / centered dialog ---- */
 const overlay = () => document.getElementById("overlay");

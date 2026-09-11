@@ -18,7 +18,7 @@ import { db, save } from "./db.mjs";
 import { hashPassword, verifyPassword, newToken } from "./auth.mjs";
 import * as billing from "./billing.mjs";
 import * as paystack from "./paystack.mjs";
-import { seedState, defaultBusiness } from "./seed.mjs";
+import { defaultBusiness } from "./seed.mjs";
 
 const PORT = Number(process.env.PORT || 5050);
 const ROOT = join(import.meta.dirname, "..");     // project root holds index.html, js/, css/
@@ -86,7 +86,7 @@ async function api(req, res, url) {
     db.data.users[uid] = { email, salt, hash, createdAt: Date.now() };
     db.data.emailIndex[email] = uid;
     db.data.businesses[uid] = defaultBusiness(json.businessName, json.ownerName);
-    db.data.states[uid] = seedState();
+    db.data.states[uid] = { products: [], sales: [], invoices: [], invoiceSeq: 1 }; // start empty; real business, real data
     db.data.subscriptions[uid] = billing.freshTrial();
     const token = newToken();
     db.data.sessions[token] = uid;
@@ -129,7 +129,7 @@ async function api(req, res, url) {
   }
 
   if (path === "/api/state" && req.method === "GET")
-    return send(res, 200, db.data.states[uid] || seedState());
+    return send(res, 200, db.data.states[uid] || { products: [], sales: [], invoices: [], invoiceSeq: 1 });
 
   if (path === "/api/state" && req.method === "PUT") {
     const s = db.data.states[uid] || {};
