@@ -39,5 +39,5 @@ export function seedState() {
 
 export function defaultBusiness(name, owner) {
   const slug = (name || "my-shop").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "my-shop";
-  return { name: name || "My business", owner: owner || "Owner", whatsapp: "", shopSlug: slug, targetMargin: 35, logo: "", address: "", payment: "" };
+  return { name: name || "My business", owner: owner || "Owner", whatsapp: "", shopSlug: slug, targetMargin: 35, logo: "", address: "", payment: "", ingredients: [] };
 }

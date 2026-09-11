@@ -9,7 +9,6 @@ import { API } from "./api.js";
 /* ---- billing constants (display copy; server is authoritative) ---- */
 export const TRIAL_DAYS = 7;
 export const SUB_PRICE = 5000;       // ₦ per month
-export const SUB_PRICE_WEEK = 1000;  // ₦ per week
 
 const CACHE_KEY = "trackit.cache";
 
@@ -62,6 +61,20 @@ export const Store = {
   saveBusiness(patch) {
     state.business = { ...state.business, ...patch };
     API.updateBusiness(patch).catch(() => {});
+  },
+
+  ingredients: () => state.business.ingredients || [],
+  /* remember ingredient names + last price so they can be reused next time */
+  rememberIngredients(costs) {
+    const list = (state.business.ingredients || []).slice();
+    for (const c of costs || []) {
+      const name = (c.name || "").trim();
+      if (!name) continue;
+      const entry = { name, lastAmount: Number(c.amount) || 0, lastBatches: Number(c.batches) || 1 };
+      const i = list.findIndex((x) => x.name.toLowerCase() === name.toLowerCase());
+      if (i === -1) list.push(entry); else list[i] = entry;
+    }
+    Store.saveBusiness({ ingredients: list });
   },
 
   upsertProduct(prod) {
@@ -135,17 +148,20 @@ export function invEffectiveStatus(inv) {
 }
 
 /* ---- money math (the profit engine) ----
-   batchYield lets a maker enter costs for a whole batch (e.g. a bag of
-   sugar that makes 40 popsicles) and get an honest per-unit cost. */
-export const unitCost = (p) => {
-  const total = (p.costs || []).reduce((s, c) => s + (Number(c.amount) || 0), 0);
-  const yld = Number(p.batchYield) || 1;
-  return yld > 1 ? total / yld : total;
-};
-export const batchCost = (p) => (p.costs || []).reduce((s, c) => s + (Number(c.amount) || 0), 0);
-export const unitProfit = (p) => (Number(p.price) || 0) - unitCost(p);
+   Batch costing:
+   - each cost line has { name, amount, batches } where `amount` is what the
+     purchase cost and `batches` is how many batches that purchase lasts
+     (default 1). Its share of one batch = amount / batches.
+   - batchYield = how many units one batch makes (default 1).
+   So a ₦500 sachet of sugar that lasts 2 batches adds ₦250 to a batch, and if
+   the batch makes 66 popsicles the sugar adds ₦3.79 per popsicle. */
+export const lineBatchShare = (c) => (Number(c.amount) || 0) / (Number(c.batches) || 1);
+export const perBatchCost = (p) => (p.costs || []).reduce((s, c) => s + lineBatchShare(c), 0);
+export const unitCost = (p) => perBatchCost(p) / (Number(p.batchYield) || 1);
+export const productPrice = (p) => Number(p.price) || Number(p.variants?.[0]?.price) || 0;
+export const unitProfit = (p) => productPrice(p) - unitCost(p);
 export const marginPct = (p) => {
-  const price = Number(p.price) || 0;
+  const price = productPrice(p);
   if (price <= 0) return 0;
   return (unitProfit(p) / price) * 100;
 };

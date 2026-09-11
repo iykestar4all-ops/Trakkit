@@ -3,7 +3,7 @@
    ============================================================ */
 
 import { $, $$, icon, naira, esc, toast, fileToImage } from "./ui.js";
-import { Store, SUB_PRICE, SUB_PRICE_WEEK, TRIAL_DAYS } from "./store.js";
+import { Store, SUB_PRICE, TRIAL_DAYS } from "./store.js";
 import { API, AuthError } from "./api.js";
 
 const NAV = [
@@ -86,7 +86,7 @@ function renderStrip() {
     const left = sub.daysLeft, low = left <= 2;
     strip.className = "status-strip" + (low ? " warn" : "");
     strip.innerHTML = `<span class="si">${icon("spark", 17)}</span>
-      <span class="grow"><b>${left} ${left === 1 ? "day" : "days"} left</b> in your free trial. Then ${naira(SUB_PRICE_WEEK)}/week or ${naira(SUB_PRICE)}/month.</span>
+      <span class="grow"><b>${left} ${left === 1 ? "day" : "days"} left</b> in your free trial. Then ${naira(SUB_PRICE)} a month to keep going.</span>
       <button class="btn ${low ? "accent" : "primary"} sm" data-subscribe>Subscribe</button>`;
     strip.hidden = false;
   } else if (sub.status === "canceled") {

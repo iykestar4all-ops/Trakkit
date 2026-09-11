@@ -7,10 +7,9 @@ export const DAY = 86400000;
 export const TRIAL_DAYS = 7;
 
 export const PLANS = {
-  weekly:  { price: 1000, days: 7,  label: "Weekly" },
   monthly: { price: 5000, days: 30, label: "Monthly" },
 };
-export const SUB_PRICE = PLANS.monthly.price; // back-compat
+export const SUB_PRICE = PLANS.monthly.price;
 
 export function freshTrial() {
   const now = Date.now();
@@ -53,9 +52,6 @@ export function publicView(sub) {
     priceNaira: PLANS.monthly.price,
     trialDays: TRIAL_DAYS,
     locked: eff === "expired",
-    plans: {
-      weekly: { price: PLANS.weekly.price, days: PLANS.weekly.days },
-      monthly: { price: PLANS.monthly.price, days: PLANS.monthly.days },
-    },
+    plans: Object.fromEntries(Object.entries(PLANS).map(([k, v]) => [k, { price: v.price, days: v.days }])),
   };
 }

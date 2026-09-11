@@ -7,7 +7,7 @@
 import {
   Store, unitCost, unitProfit, marginPct, marginBand, newId,
   invSubtotal, invTotal, invCost, invProfit, invEffectiveStatus,
-  TRIAL_DAYS, SUB_PRICE, SUB_PRICE_WEEK, batchCost,
+  TRIAL_DAYS, SUB_PRICE, perBatchCost, productPrice,
 } from "./store.js";
 import { API } from "./api.js";
 import {
@@ -52,6 +52,14 @@ function biggestOffender() {
 function pThumb(p) {
   return p.image ? `<img src="${p.image}" alt="" style="width:100%;height:100%;object-fit:cover"/>` : (p.emoji || "📦");
 }
+function priceLabel(p) {
+  if (p.variants?.length) {
+    const prices = p.variants.map((v) => Number(v.price) || productPrice(p)).filter((x) => x > 0);
+    return "from " + naira(prices.length ? Math.min(...prices) : productPrice(p));
+  }
+  return naira(productPrice(p));
+}
+const flavorNames = (p) => (p.variants?.length ? p.variants.map((v) => esc(v.name)).join(" · ") : "");
 
 /* ============================================================
    OVERVIEW (home)
@@ -168,7 +176,7 @@ function productRow(p) {
   const prof = unitProfit(p);
   return `<button class="prow" data-edit="${p.id}">
     <span class="thumb">${pThumb(p)}</span>
-    <span class="info"><b>${esc(p.name)}</b><span class="sub">${naira(p.price)} · cost ${naira(unitCost(p))}${typeof p.stock === "number" ? " · " + p.stock + " in stock" : ""}</span></span>
+    <span class="info"><b>${esc(p.name)}${p.variants?.length ? ` <span class="help" style="font-weight:700">· ${p.variants.length} flavors</span>` : ""}</b><span class="sub">${priceLabel(p)} · cost ${naira(unitCost(p))}${typeof p.stock === "number" ? " · " + p.stock + " in stock" : ""}</span></span>
     <span class="right">
       <span class="meter-wrap"><span class="meter ${band}"><i style="width:${w}%"></i></span>
         <span class="margin-tag ${band}">${pct(m)}</span></span>
@@ -183,52 +191,84 @@ function emptyProducts() {
     <button class="btn accent" data-add-empty>Add a product</button></div>`;
 }
 
-/* ---------- product editor (dialog) ---------- */
+/* ---------- product editor (dialog, two tabs) ---------- */
 function openProductEditor(id) {
   const editing = id ? Store.product(id) : null;
   const p = editing ? structuredClone(editing)
-    : { id: newId("p"), name: "", emoji: "📦", image: "", price: "", stock: "", category: "", batchYield: 1, costs: [{ name: "Materials", amount: "" }] };
+    : { id: newId("p"), name: "", emoji: "📦", image: "", price: "", stock: "", batchYield: 1, costs: [{ name: "", amount: "", batches: 1 }], variants: [] };
   if (!p.batchYield) p.batchYield = 1;
-  const emojis = ["🎂","🍢","🧴","👜","🍞","🍰","🧁","👗","💄","🕯️","☕","🍫","🥤","📦"];
+  if (!Array.isArray(p.variants)) p.variants = [];
+  if (!Array.isArray(p.costs) || !p.costs.length) p.costs = [{ name: "", amount: "", batches: 1 }];
+  p.costs = p.costs.map((c) => ({ name: c.name || "", amount: c.amount ?? "", batches: c.batches || 1 }));
+  const emojis = ["🎂","🍢","🧊","🧴","👜","🍞","🍰","🧁","👗","💄","🕯️","☕","🍫","🥤","📦"];
+  const ings = Store.ingredients();
 
   const dlg = openDialog(`
-    <div class="field"><label>Product photo</label>
-      <div class="logo-row">
-        <div class="logo-preview" id="pPhoto" style="width:64px;height:64px;font-size:26px">${p.image ? `<img src="${p.image}" alt=""/>` : (p.emoji || "📦")}</div>
-        <div>
-          <input type="file" id="pImgFile" accept="image/png,image/jpeg,image/webp" hidden/>
-          <button type="button" class="btn ghost sm" id="pImgPick">${icon("upload", 16)} Upload photo</button>
-          <button type="button" class="btn ghost sm" id="pImgRemove" style="color:var(--warn)" ${p.image ? "" : "hidden"}>Remove</button>
-          <button type="button" class="btn ghost sm" id="pRefine">${icon("spark", 16)} Refine with AI <span class="soon">soon</span></button>
-          <p class="help">Under 1MB. Or pick an emoji below. Refine will clean up a rough photo into a tidy storefront image.</p>
-        </div>
-      </div>
-      <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:10px" id="emojiPick">
-        ${emojis.map((e) => `<button type="button" class="thumb" data-emoji="${e}" style="width:38px;height:38px;font-size:19px;${e === p.emoji && !p.image ? "outline:2px solid var(--orange);outline-offset:2px" : ""}">${e}</button>`).join("")}
-      </div></div>
-    <div class="field"><label>Name</label>
-      <input class="input" id="pName" placeholder="e.g. Signature chocolate cake" value="${esc(p.name)}"/></div>
-    <div class="two-col">
-      <div class="field"><label>Selling price</label>
-        <div class="input-money"><span class="sym">₦</span><input class="input" id="pPrice" inputmode="numeric" placeholder="0" value="${p.price}"/></div></div>
-      <div class="field"><label>In stock <span class="help" style="display:inline">optional</span></label>
-        <input class="input" id="pStock" inputmode="numeric" placeholder="0" value="${p.stock ?? ""}"/></div>
+    <div class="segment" id="pTabs" style="width:100%;margin-bottom:18px">
+      <button type="button" data-tab="product" class="on" style="flex:1">Product</button>
+      <button type="button" data-tab="cost" style="flex:1">Cost per unit</button>
     </div>
-    <div class="field"><label>This recipe or batch makes</label>
-      <div class="input-money"><input class="input" id="pYield" inputmode="numeric" value="${p.batchYield}" style="padding-left:13px"/><span class="sym" style="left:auto;right:13px">units</span></div>
-      <p class="help">If a batch of ingredients makes many units (e.g. 40 popsicles), enter your costs for the whole batch below and set this. Trackit works out the cost per unit.</p></div>
-    <div class="field"><label id="costLabel">What the batch costs to make</label>
-      <div class="cost-lines" id="costLines">${p.costs.map(costLineHTML).join("")}</div>
-      <button type="button" class="add-cost" id="addCost">${icon("plus", 15)} Add a cost (packaging, transport, gas)</button>
-      <p class="help" id="costHint"></p></div>
-    <div class="card" id="livePreview" style="background:var(--surface-2);border:0;padding:14px 16px"></div>
+
+    <div id="tabProduct">
+      <div class="field"><label>Product photo</label>
+        <div class="logo-row">
+          <div class="logo-preview" id="pPhoto" style="width:64px;height:64px;font-size:26px">${p.image ? `<img src="${p.image}" alt=""/>` : (p.emoji || "📦")}</div>
+          <div>
+            <input type="file" id="pImgFile" accept="image/png,image/jpeg,image/webp" hidden/>
+            <button type="button" class="btn ghost sm" id="pImgPick">${icon("upload", 16)} Upload photo</button>
+            <button type="button" class="btn ghost sm" id="pImgRemove" style="color:var(--warn)" ${p.image ? "" : "hidden"}>Remove</button>
+            <button type="button" class="btn ghost sm" id="pRefine">${icon("spark", 16)} Refine with AI <span class="soon">soon</span></button>
+            <p class="help">Under 1MB, or pick an emoji.</p>
+          </div>
+        </div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:10px" id="emojiPick">
+          ${emojis.map((e) => `<button type="button" class="thumb" data-emoji="${e}" style="width:38px;height:38px;font-size:19px;${e === p.emoji && !p.image ? "outline:2px solid var(--orange);outline-offset:2px" : ""}">${e}</button>`).join("")}
+        </div></div>
+      <div class="field"><label>Name</label>
+        <input class="input" id="pName" placeholder="e.g. Popsicle" value="${esc(p.name)}"/></div>
+      <div class="two-col">
+        <div class="field"><label>Selling price</label>
+          <div class="input-money"><span class="sym">₦</span><input class="input" id="pPrice" inputmode="numeric" placeholder="0" value="${p.price}"/></div></div>
+        <div class="field"><label>In stock <span class="help" style="display:inline">optional</span></label>
+          <input class="input" id="pStock" inputmode="numeric" placeholder="0" value="${p.stock ?? ""}"/></div>
+      </div>
+      <div class="field"><label>Flavors / variants <span class="help" style="display:inline">optional</span></label>
+        <div id="flavorLines">${p.variants.map(flavorLineHTML).join("")}</div>
+        <button type="button" class="add-cost" id="addFlavor">${icon("plus", 15)} Add a flavor</button>
+        <p class="help">e.g. Mango, Coconut, Alcoholic. Each shows in your shop with its own price. Leave a price blank to use the selling price above.</p></div>
+    </div>
+
+    <div id="tabCost" hidden>
+      <div class="field"><label>This batch makes</label>
+        <div class="input-money"><input class="input" id="pYield" inputmode="numeric" value="${p.batchYield}" style="padding-left:13px"/><span class="sym" style="left:auto;right:13px">units</span></div>
+        <p class="help">How many you get from one batch (e.g. 66 popsicles). Leave 1 if you make them one at a time.</p></div>
+      <div class="field"><label>What you bought to make this batch</label>
+        <div id="ingLines">${p.costs.map((c) => ingLineHTML(c)).join("")}</div>
+        <datalist id="ingList">${ings.map((i) => `<option value="${esc(i.name)}"></option>`).join("")}</datalist>
+        <button type="button" class="add-cost" id="addIng">${icon("plus", 15)} Add an ingredient / cost</button></div>
+      <div class="card nudge" style="margin-bottom:14px">
+        <b>🤨 Are you SURE that's everything?</b>
+        <p>Money hides in the costs you "forget". Did you count the popsicle sticks, gas or electricity, transport to the market, packaging, and your own time?</p>
+      </div>
+      <div class="card" id="costReadout" style="background:var(--surface-2);border:0;padding:14px 16px"></div>
+    </div>
+
+    <div class="card" id="livePreview" style="background:var(--surface-2);border:0;padding:14px 16px;margin-top:14px"></div>
     <div class="actions">
       ${editing ? `<button class="btn ghost" id="delProduct" style="color:var(--warn);flex:none">${icon("trash",18)}</button>` : ""}
       <button class="btn ghost" data-close>Cancel</button>
       <button class="btn primary" id="saveProduct">${editing ? "Save changes" : "Add product"}</button>
     </div>
-  `, { title: editing ? "Edit product" : "New product" });
+  `, { title: editing ? "Edit product" : "New product", wide: true });
 
+  // ---- tabs ----
+  $$("#pTabs button", dlg).forEach((b) => b.addEventListener("click", () => {
+    $$("#pTabs button", dlg).forEach((x) => x.classList.toggle("on", x === b));
+    $("#tabProduct", dlg).hidden = b.dataset.tab !== "product";
+    $("#tabCost", dlg).hidden = b.dataset.tab !== "cost";
+  }));
+
+  // ---- photo / emoji ----
   const photo = $("#pPhoto", dlg), imgFile = $("#pImgFile", dlg), imgRemove = $("#pImgRemove", dlg);
   $("#pImgPick", dlg).addEventListener("click", () => imgFile.click());
   imgFile.addEventListener("change", async () => {
@@ -241,7 +281,6 @@ function openProductEditor(id) {
   });
   imgRemove.addEventListener("click", () => { p.image = ""; photo.innerHTML = p.emoji || "📦"; imgRemove.hidden = true; });
   $("#pRefine", dlg).addEventListener("click", () => toast("AI photo cleanup is coming soon. Upload a clear photo for now.", "good"));
-
   $$("#emojiPick [data-emoji]", dlg).forEach((el) => el.addEventListener("click", () => {
     p.emoji = el.dataset.emoji;
     $$("#emojiPick [data-emoji]", dlg).forEach((x) => (x.style.outline = "none"));
@@ -249,17 +288,36 @@ function openProductEditor(id) {
     if (!p.image) photo.innerHTML = p.emoji;
   }));
 
-  $("#pYield", dlg).addEventListener("input", livePreview);
-
-  function refreshCosts() { $("#costLines", dlg).innerHTML = p.costs.map(costLineHTML).join(""); wireCostLines(); livePreview(); }
-  function wireCostLines() {
-    $$("#costLines .cost-line", dlg).forEach((row, i) => {
-      row.querySelector(".cl-name").addEventListener("input", (e) => { p.costs[i].name = e.target.value; });
-      row.querySelector(".cl-amt input").addEventListener("input", (e) => { p.costs[i].amount = e.target.value; livePreview(); });
-      row.querySelector(".cl-del")?.addEventListener("click", () => { p.costs.splice(i, 1); refreshCosts(); });
+  // ---- flavors ----
+  function refreshFlavors() { $("#flavorLines", dlg).innerHTML = p.variants.map(flavorLineHTML).join(""); wireFlavors(); }
+  function wireFlavors() {
+    $$("#flavorLines .flavor-line", dlg).forEach((row, i) => {
+      row.querySelector(".fl-name").addEventListener("input", (e) => { p.variants[i].name = e.target.value; });
+      row.querySelector(".fl-price input").addEventListener("input", (e) => { p.variants[i].price = e.target.value; });
+      row.querySelector(".fl-del").addEventListener("click", () => { p.variants.splice(i, 1); refreshFlavors(); });
     });
   }
-  $("#addCost", dlg).addEventListener("click", () => { p.costs.push({ name: "", amount: "" }); refreshCosts(); });
+  $("#addFlavor", dlg).addEventListener("click", () => { p.variants.push({ name: "", price: "" }); refreshFlavors(); });
+  wireFlavors();
+
+  // ---- ingredients / costs ----
+  $("#pYield", dlg).addEventListener("input", livePreview);
+  function refreshIngs() { $("#ingLines", dlg).innerHTML = p.costs.map((c) => ingLineHTML(c)).join(""); wireIngs(); livePreview(); }
+  function wireIngs() {
+    $$("#ingLines .ing-line", dlg).forEach((row, i) => {
+      const nameEl = row.querySelector(".ing-name"), costEl = row.querySelector(".ing-cost"), bEl = row.querySelector(".ing-b");
+      nameEl.addEventListener("input", (e) => {
+        p.costs[i].name = e.target.value;
+        const match = ings.find((x) => x.name.toLowerCase() === e.target.value.trim().toLowerCase());
+        if (match && !costEl.value) { costEl.value = match.lastAmount || ""; bEl.value = match.lastBatches || 1; p.costs[i].amount = costEl.value; p.costs[i].batches = bEl.value; livePreview(); }
+      });
+      costEl.addEventListener("input", (e) => { p.costs[i].amount = e.target.value; livePreview(); });
+      bEl.addEventListener("input", (e) => { p.costs[i].batches = Math.max(1, Number(e.target.value) || 1); livePreview(); });
+      row.querySelector(".ing-del").addEventListener("click", () => { p.costs.splice(i, 1); if (!p.costs.length) p.costs.push({ name: "", amount: "", batches: 1 }); refreshIngs(); });
+    });
+  }
+  $("#addIng", dlg).addEventListener("click", () => { p.costs.push({ name: "", amount: "", batches: 1 }); refreshIngs(); });
+  wireIngs();
 
   function readInputs() {
     p.name = $("#pName", dlg).value.trim();
@@ -269,28 +327,35 @@ function openProductEditor(id) {
   }
   function livePreview() {
     readInputs();
-    const batch = (p.costs || []).reduce((s, c) => s + (Number(c.amount) || 0), 0);
-    const perUnitCost = p.batchYield > 1 ? batch / p.batchYield : batch;
-    const profit = (Number(p.price) || 0) - perUnitCost;
-    const mp = p.price > 0 ? (profit / p.price) * 100 : 0, band = marginBand(mp);
-    $("#costLabel", dlg).textContent = p.batchYield > 1 ? "What the batch costs to make" : "What it costs to make one";
-    $("#costHint", dlg).textContent = p.price > 0 ? (batch === 0
-      ? "Did you count packaging, transport and gas? Each one makes the number honest."
-      : (p.batchYield > 1 ? `Batch cost ${naira(batch)} ÷ ${p.batchYield} = ${naira(perUnitCost)} per unit. ` : "") + (mp < 30 ? "Below a healthy 30%. Pricing can suggest a fairer price." : "Healthy margin. Nice.")) : "";
+    const batch = (p.costs || []).reduce((s, c) => s + (Number(c.amount) || 0) / (Number(c.batches) || 1), 0);
+    const yld = Math.max(1, Number(p.batchYield) || 1);
+    const perUnit = batch / yld;
+    const price = Number(p.price) || Number(p.variants?.[0]?.price) || 0;
+    const profit = price - perUnit, mp = price > 0 ? (profit / price) * 100 : 0, band = marginBand(mp);
+    $("#costReadout", dlg).innerHTML = batch === 0
+      ? `<span class="help" style="margin:0">Add what you bought above to see the true cost per unit.</span>`
+      : yld > 1
+        ? `<div>This batch costs <b>${naira(batch)}</b> and makes <b>${yld}</b>.</div><div style="font-family:var(--display);font-weight:800;font-size:22px;margin-top:4px">${naira(perUnit)} <span style="font-size:.6em;color:var(--ink-3);font-weight:700">per unit</span></div>`
+        : `<div>It costs <b style="font-family:var(--display)">${naira(perUnit)}</b> to make one.</div>`;
     $("#livePreview", dlg).innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center">
       <div><div class="help" style="font-weight:700;margin:0">Profit per unit</div>
-        <div style="font-family:var(--display);font-weight:800;font-size:24px;color:${profit < 0 ? "var(--warn)" : "var(--ink)"}">${naira(profit, { sign: profit > 0 })}</div></div>
-      <div class="margin-tag ${band}" style="font-size:13px;padding:5px 11px">${pct(mp)} margin</div></div>`;
+        <div style="font-family:var(--display);font-weight:800;font-size:24px;color:${profit < 0 ? "var(--warn)" : "var(--ink)"}">${price ? naira(profit, { sign: profit > 0 }) : "—"}</div></div>
+      ${price ? `<div class="margin-tag ${band}" style="font-size:13px;padding:5px 11px">${pct(mp)} margin</div>` : ""}</div>`;
   }
   $("#pName", dlg).addEventListener("input", livePreview);
   $("#pPrice", dlg).addEventListener("input", livePreview);
-  wireCostLines(); livePreview();
+  livePreview();
 
   $("#saveProduct", dlg).addEventListener("click", () => {
     readInputs();
     if (!p.name) return toast("Give the product a name.", "bad");
-    if (!p.price) return toast("Add a selling price.", "bad");
-    p.costs = p.costs.filter((c) => c.name || c.amount).map((c) => ({ name: c.name || "Cost", amount: Number(c.amount) || 0 }));
+    if (!p.price && !p.variants.some((v) => Number(v.price) > 0)) return toast("Add a selling price (or a flavor price).", "bad");
+    p.costs = p.costs.filter((c) => (c.name || "").trim() || c.amount)
+      .map((c) => ({ name: (c.name || "Cost").trim(), amount: Number(c.amount) || 0, batches: Math.max(1, Number(c.batches) || 1) }));
+    p.variants = p.variants.filter((v) => (v.name || "").trim())
+      .map((v) => ({ name: v.name.trim(), price: Number(v.price) || 0 }));
+    if (!p.price && p.variants.length) p.price = p.variants.find((v) => v.price > 0)?.price || 0; // base price for profit/sales
+    Store.rememberIngredients(p.costs);
     Store.upsertProduct(p); closeDialog();
     toast(editing ? "Product updated." : "Product added.", "good"); go(currentRoute());
   });
@@ -298,11 +363,20 @@ function openProductEditor(id) {
     Store.deleteProduct(p.id); closeDialog(); toast("Product deleted."); go("products");
   });
 }
-function costLineHTML(c) {
-  return `<div class="cost-line">
-    <input class="input cl-name" placeholder="Cost name" value="${esc(c.name ?? "")}"/>
-    <div class="input-money cl-amt" style="width:150px"><span class="sym">₦</span><input class="input" inputmode="numeric" placeholder="0" value="${c.amount ?? ""}" style="padding-left:26px"/></div>
-    <button type="button" class="cl-del" aria-label="Remove">${icon("x", 16)}</button></div>`;
+function ingLineHTML(c) {
+  return `<div class="ing-line">
+    <input class="input ing-name" list="ingList" placeholder="What did you buy? e.g. condensed milk" value="${esc(c.name ?? "")}"/>
+    <div class="ing-row">
+      <div class="input-money" style="flex:1;min-width:120px"><span class="sym">₦</span><input class="input ing-cost" inputmode="numeric" placeholder="what it cost" value="${c.amount ?? ""}" style="padding-left:26px"/></div>
+      <div class="ing-lasts">lasts <input class="input ing-b" inputmode="numeric" value="${c.batches ?? 1}"/> batch(es)</div>
+      <button type="button" class="ing-del" aria-label="Remove">${icon("x", 16)}</button>
+    </div></div>`;
+}
+function flavorLineHTML(v) {
+  return `<div class="flavor-line">
+    <input class="input fl-name" placeholder="Flavor e.g. Mango" value="${esc(v?.name ?? "")}" style="flex:1"/>
+    <div class="input-money fl-price" style="width:130px"><span class="sym">₦</span><input class="input" inputmode="numeric" placeholder="price" value="${v?.price ?? ""}" style="padding-left:26px"/></div>
+    <button type="button" class="fl-del cl-del" aria-label="Remove">${icon("x", 16)}</button></div>`;
 }
 
 /* ============================================================
@@ -737,7 +811,7 @@ export const Shop = {
       </div>
       <div class="sec-head"><h2>In your shop</h2><span class="help" style="margin:0">${list.length} items</span></div>
       ${list.length ? `<div class="shop-grid">${list.map((p) => `<div class="shop-card"><div class="ph">${pThumb(p)}</div>
-        <div class="cap"><b>${esc(p.name)}</b><div class="pr">${naira(p.price)}</div></div></div>`).join("")}</div>`
+        <div class="cap"><b>${esc(p.name)}</b><div class="pr">${priceLabel(p)}</div>${flavorNames(p) ? `<div class="help" style="margin:2px 0 0;font-size:11.5px">${flavorNames(p)}</div>` : ""}</div></div>`).join("")}</div>`
         : `<div class="empty"><p>Add products to fill your shop.</p></div>`}
     `;
   },
@@ -756,11 +830,16 @@ export const Shop = {
 };
 function openShopPreview() {
   const b = Store.business(), list = Store.products();
+  const entries = [];
+  for (const p of list) {
+    if (p.variants?.length) for (const v of p.variants) entries.push({ p, label: `${p.name} — ${v.name}`, price: Number(v.price) || productPrice(p) });
+    else entries.push({ p, label: p.name, price: productPrice(p) });
+  }
   openDialog(`<p class="help" style="margin:-6px 0 16px">This is what a buyer sees.</p>
-    <div class="shop-grid">${list.map((p) => {
-      const order = `https://wa.me/${b.whatsapp}?text=${encodeURIComponent(`Hi ${b.name}, I want to order: ${p.name} (${naira(p.price)})`)}`;
-      return `<div class="shop-card"><div class="ph">${pThumb(p)}</div>
-        <div class="cap"><b>${esc(p.name)}</b><div class="pr">${naira(p.price)}</div>
+    <div class="shop-grid">${entries.map((e) => {
+      const order = `https://wa.me/${b.whatsapp}?text=${encodeURIComponent(`Hi ${b.name}, I want to order: ${e.label} (${naira(e.price)})`)}`;
+      return `<div class="shop-card"><div class="ph">${pThumb(e.p)}</div>
+        <div class="cap"><b>${esc(e.label)}</b><div class="pr">${naira(e.price)}</div>
           <a class="btn wa sm block" href="${order}" target="_blank" rel="noopener" style="margin-top:8px;justify-content:center">Order</a></div></div>`;
     }).join("")}</div>
     <div class="actions"><button class="btn ghost block" data-close>Close preview</button></div>`, { title: esc(b.name), wide: true });
@@ -902,7 +981,7 @@ function billingCard() {
   else action = `<button class="btn accent" id="bSubscribe">Choose a plan</button>`;
 
   return `
-    <div class="bill-row"><span class="bk">Plan</span><span class="bv">${naira(SUB_PRICE_WEEK)}/week · ${naira(SUB_PRICE)}/month</span></div>
+    <div class="bill-row"><span class="bk">Plan</span><span class="bv">Trackit · ${naira(SUB_PRICE)}/month</span></div>
     <div class="bill-row"><span class="bk">Status</span><span class="status ${status.cls}"><span class="d"></span>${status.label}</span></div>
     <div class="actions" style="margin-top:16px">
       ${action}
@@ -942,9 +1021,9 @@ export const Paywall = {
         <p class="lede">Keep the full picture of your profit, your invoices and your shop.</p>
         <div class="plan">
           <span class="tag">${TRIAL_DAYS} days free, then</span>
-          <div class="price"><span class="amt">${naira(SUB_PRICE_WEEK)}</span><span class="per">/ week or ${naira(SUB_PRICE)} / month</span></div>
+          <div class="price"><span class="amt">${naira(SUB_PRICE)}</span><span class="per">/ month</span></div>
           <ul>${PLAN_FEATURES.map((f) => `<li><span class="ck">${icon("check", 13, 3)}</span>${f}</li>`).join("")}</ul>
-          <button class="btn accent block" id="subBtn" style="margin-top:20px">Choose a plan</button>
+          <button class="btn accent block" id="subBtn" style="margin-top:20px">Subscribe for ${naira(SUB_PRICE)}/month</button>
         </div>
         <p class="free-hook">Not ready? You can still <a class="link" data-free>price a product for free</a>.</p>
         <p class="fine">Cancel anytime. Your data stays safe while you decide.</p>
@@ -959,40 +1038,26 @@ export const Paywall = {
 
 /* ---------- subscribe flow (dialog) — routed through the backend ---------- */
 export function openSubscribe() {
-  let plan = "monthly";
-  const planCard = (id, price, per, note, on) => `
-    <button type="button" class="plan-opt ${on ? "on" : ""}" data-plan="${id}">
-      <div class="po-price"><span class="amt">${naira(price)}</span><span class="per">/ ${per}</span></div>
-      <div class="po-note">${note}</div>
-    </button>`;
   const dlg = openDialog(`
-    <div class="plan-opts" id="planOpts">
-      ${planCard("weekly", SUB_PRICE_WEEK, "week", "Pay as you go", false)}
-      ${planCard("monthly", SUB_PRICE, "month", "Best value", true)}
+    <div class="plan" style="border:0;padding:0">
+      <div class="price"><span class="amt">${naira(SUB_PRICE)}</span><span class="per">/ month</span></div>
+      <p class="help" style="margin-top:4px">Renews monthly. Cancel anytime from Business settings.</p>
+      <ul style="margin-top:16px">${PLAN_FEATURES.map((f) => `<li><span class="ck">${icon("check", 13, 3)}</span>${f}</li>`).join("")}</ul>
     </div>
-    <ul class="plan" style="border:0;padding:0;margin:18px 0 0">${PLAN_FEATURES.map((f) => `<li><span class="ck">${icon("check", 13, 3)}</span>${f}</li>`).join("")}</ul>
     <div class="actions" style="margin-top:22px">
       <button class="btn ghost" data-close>Not now</button>
-      <button class="btn accent" id="payNow"></button>
+      <button class="btn accent" id="payNow">${icon("check", 18)} Subscribe · ${naira(SUB_PRICE)}/month</button>
     </div>
-    <p class="fine" id="subNote" style="text-align:center">Cancel anytime from Business settings.</p>
-  `, { title: "Choose your plan" });
+    <p class="fine" id="subNote" style="text-align:center"></p>
+  `, { title: "Subscribe to Trackit" });
 
   const payBtn = $("#payNow", dlg);
-  const syncBtn = () => { payBtn.innerHTML = `${icon("check", 18)} Subscribe · ${plan === "weekly" ? naira(SUB_PRICE_WEEK) + "/week" : naira(SUB_PRICE) + "/month"}`; };
-  $$("#planOpts .plan-opt", dlg).forEach((el) => el.addEventListener("click", () => {
-    plan = el.dataset.plan;
-    $$("#planOpts .plan-opt", dlg).forEach((x) => x.classList.toggle("on", x === el));
-    syncBtn();
-  }));
-  syncBtn();
-
   payBtn.addEventListener("click", async () => {
     payBtn.disabled = true;
     try {
-      const init = await API.billingInitialize(plan);
+      const init = await API.billingInitialize("monthly");
       if (init.mode === "paystack") { window.location.href = init.authorization_url; return; }
-      const r = await API.billingMockActivate(plan);
+      const r = await API.billingMockActivate("monthly");
       Store.setSubscription(r.subscription);
       closeDialog();
       toast(`You're subscribed. Renews ${fmtDate(r.subscription.renewsAt)}.`, "good");

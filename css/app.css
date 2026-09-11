@@ -304,6 +304,22 @@ textarea.input { resize: vertical; min-height: 72px; }
 .cost-line .cl-del { border: 1px solid var(--line); background: var(--surface-2); color: var(--warn); width: 40px; height: 42px; border-radius: 10px; flex: none; display: grid; place-items: center; }
 .add-cost { color: var(--orange); font-weight: 800; font-size: 13.5px; background: none; border: 0; padding: 6px 1px; display: inline-flex; align-items: center; gap: 6px; }
 
+/* ingredient / batch cost lines */
+.ing-line { border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: var(--surface-2); margin-bottom: 9px; }
+.ing-line .ing-name { margin-bottom: 8px; }
+.ing-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ing-lasts { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2); font-weight: 700; }
+.ing-lasts .ing-b { width: 52px; text-align: center; padding: 9px 6px; }
+.ing-del { border: 1px solid var(--line); background: var(--surface); color: var(--warn); width: 40px; height: 42px; border-radius: 10px; flex: none; display: grid; place-items: center; }
+
+/* flavors */
+.flavor-line { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+
+/* sarcastic reminder */
+.nudge { background: linear-gradient(100deg, var(--surface), rgba(247,165,59,.14)); border-color: rgba(247,165,59,.38); padding: 14px 16px; }
+.nudge b { font-size: 14.5px; }
+.nudge p { margin: 6px 0 0; font-size: 13px; color: var(--ink-2); line-height: 1.5; }
+
 .pill-row { display: flex; gap: 8px; }
 .pill { border: 1px solid var(--line); background: var(--surface-2); border-radius: 999px; padding: 7px 15px; font-weight: 800; font-size: 13px; color: var(--ink-2); }
 .pill.on { background: var(--orange); color: #fff; border-color: var(--orange); }
