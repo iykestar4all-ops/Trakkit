@@ -8,6 +8,7 @@ import {
   Store, unitCost, unitProfit, marginPct, marginBand, newId,
   invSubtotal, invTotal, invCost, invProfit, invEffectiveStatus,
   TRIAL_DAYS, SUB_PRICE, perBatchCost, productPrice,
+  monthlyOverhead, overheadPerUnit, overheadUnits, monthlyUnitsSold,
 } from "./store.js";
 import { API } from "./api.js";
 import {
@@ -378,6 +379,16 @@ function flavorLineHTML(v) {
     <div class="input-money fl-price" style="width:130px"><span class="sym">₦</span><input class="input" inputmode="numeric" placeholder="price" value="${v?.price ?? ""}" style="padding-left:26px"/></div>
     <button type="button" class="fl-del cl-del" aria-label="Remove">${icon("x", 16)}</button></div>`;
 }
+function overheadLineHTML(o) {
+  return `<div class="oh-line">
+    <input class="input oh-name" placeholder="e.g. Shop rent" value="${esc(o?.name ?? "")}" style="flex:1;min-width:130px"/>
+    <div class="input-money oh-amt" style="width:120px"><span class="sym">₦</span><input class="input" inputmode="numeric" placeholder="0" value="${o?.amount ?? ""}" style="padding-left:26px"/></div>
+    <select class="select oh-period" style="width:104px">
+      <option value="month" ${o?.period !== "year" ? "selected" : ""}>/ month</option>
+      <option value="year" ${o?.period === "year" ? "selected" : ""}>/ year</option>
+    </select>
+    <button type="button" class="oh-del cl-del" aria-label="Remove">${icon("x", 16)}</button></div>`;
+}
 
 /* ============================================================
    PRICING — the calculator
@@ -396,7 +407,10 @@ export const Calculator = {
               ${products.map((p) => `<option value="${p.id}" ${p.id === params.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></div>` : ""}
           <div class="field"><label>Cost to make one</label>
             <div class="input-money"><span class="sym">₦</span><input class="input" id="cCost" inputmode="numeric" placeholder="0"/></div>
-            <p class="help">Add up materials, packaging, transport and gas.</p></div>
+            <p class="help">Materials, packaging, transport, gas — your direct cost per unit.</p></div>
+          <div class="field" id="ohField">
+            <label class="oh-toggle"><input type="checkbox" id="cOh"/><span>Add my running costs</span><span class="oh-amt" id="ohAmt"></span></label>
+            <p class="help" id="ohHint"></p></div>
           <div class="field" id="priceField"><label>Your selling price</label>
             <div class="input-money"><span class="sym">₦</span><input class="input" id="cPrice" inputmode="numeric" placeholder="0"/></div></div>
           <div class="field" id="marginField" hidden><label>Target margin: <span id="tmVal">${target}%</span></label>
@@ -408,10 +422,23 @@ export const Calculator = {
   },
   mount(root, params = {}) {
     let mode = "check";
-    const cCost = $("#cCost", root), cPrice = $("#cPrice", root), cMargin = $("#cMargin", root);
+    const cCost = $("#cCost", root), cPrice = $("#cPrice", root), cMargin = $("#cMargin", root), cOh = $("#cOh", root);
+
+    // running-costs toggle setup
+    const oh = overheadPerUnit();
+    if (oh > 0) {
+      $("#ohAmt", root).textContent = `+${naira(oh)} per unit`;
+      $("#ohHint", root).textContent = "Spreads rent, staff and other running costs into this unit, so the price covers everything.";
+    } else {
+      cOh.disabled = true;
+      $("#ohField", root).style.opacity = ".6";
+      $("#ohHint", root).innerHTML = `Add your running costs in <a class="link" data-goto="settings">Business settings</a> to include them here.`;
+      $("#ohHint", root).querySelector("[data-goto]")?.addEventListener("click", () => go("settings"));
+    }
+
     function loadProduct(id) {
       const p = Store.product(id);
-      if (!p) { cCost.value = ""; cPrice.value = ""; } else { cCost.value = unitCost(p); cPrice.value = p.price; }
+      if (!p) { cCost.value = ""; cPrice.value = ""; } else { cCost.value = Math.round(unitCost(p)); cPrice.value = productPrice(p); }
       render();
     }
     $("#loadProduct", root)?.addEventListener("change", (e) => loadProduct(e.target.value));
@@ -423,11 +450,15 @@ export const Calculator = {
       $("#marginField", root).hidden = mode !== "suggest"; render();
     }));
     cMargin?.addEventListener("input", () => { $("#tmVal", root).textContent = cMargin.value + "%"; render(); });
+    cOh?.addEventListener("change", render);
     [cCost, cPrice].forEach((el) => el.addEventListener("input", render));
 
     function render() {
-      const cost = Number(cCost.value) || 0, out = $("#calcOut", root);
-      if (!cost) { out.innerHTML = `<div class="card" style="color:var(--ink-3)"><p class="help" style="margin:0">Your result shows here once you enter a cost.</p></div>`; return; }
+      const materials = Number(cCost.value) || 0, out = $("#calcOut", root);
+      const ohAdd = (cOh && cOh.checked && oh > 0) ? oh : 0;
+      const cost = materials + ohAdd;
+      const ohNote = ohAdd > 0 ? `<div class="rmsg" style="margin-top:8px;opacity:.85">Includes ${naira(ohAdd)} running costs per unit (materials ${naira(materials)} + overhead ${naira(ohAdd)}).</div>` : "";
+      if (!materials) { out.innerHTML = `<div class="card" style="color:var(--ink-3)"><p class="help" style="margin:0">Your result shows here once you enter a cost.</p></div>`; return; }
       if (mode === "check") {
         const price = Number(cPrice.value) || 0;
         if (!price) { out.innerHTML = `<div class="card" style="color:var(--ink-3)"><p class="help" style="margin:0">Enter your selling price to see the margin.</p></div>`; return; }
@@ -437,13 +468,14 @@ export const Calculator = {
         out.innerHTML = `<div class="readout ${healthy ? "ok" : "warn"}">
           <div class="rl">You make</div><div class="rv">${naira(profit)} <small>per unit</small></div>
           <div class="rmsg">That works out to <b>${pct(m)}</b> margin. ${healthy ? "Healthy. Most makers aim for 30% or more, and you are there." : "Most makers aim for 30% or more. You are leaving money on the table."}</div>
-          ${!healthy ? `<div class="move">Your move: to reach <b>${target}%</b>, sell at <b>${naira(suggested)}</b>. That is ${naira(suggested - price)} more per unit.</div>` : ""}</div>
+          ${!healthy ? `<div class="move">Your move: to reach <b>${target}%</b>, sell at <b>${naira(suggested)}</b>. That is ${naira(suggested - price)} more per unit.</div>` : ""}
+          ${ohNote}</div>
           ${!healthy ? `<button class="btn accent block" id="useSuggest" style="margin-top:12px">Use ${naira(suggested)} as my price</button>` : ""}`;
         $("#useSuggest", root)?.addEventListener("click", () => { cPrice.value = suggested; render(); toast("Price updated in the calculator."); });
       } else {
         const target = Number(cMargin.value) || 35, price = Math.ceil((cost / (1 - target / 100)) / 50) * 50;
         out.innerHTML = `<div class="readout ok"><div class="rl">To keep a ${target}% margin, sell at</div>
-          <div class="rv">${naira(price)}</div><div class="rmsg">You would make <b>${naira(price - cost)}</b> on every unit.</div></div>`;
+          <div class="rv">${naira(price)}</div><div class="rmsg">You would make <b>${naira(price - cost)}</b> on every unit.</div>${ohNote}</div>`;
       }
     }
     render();
@@ -888,6 +920,18 @@ export const Settings = {
         <div class="actions" style="justify-content:flex-end"><button class="btn primary" id="sSaveInv">Save invoice details</button></div>
       </div>
 
+      <div class="sec-head" style="max-width:560px"><h2>Running costs</h2></div>
+      <div class="card" style="max-width:560px">
+        <p class="help" style="margin:0 0 12px">Rent, staff, data, fuel, shipping, security. Trackit spreads these across your sales so Pricing can suggest a price that covers everything, not just materials.</p>
+        <div id="ohLines">${(b.overheads || []).map(overheadLineHTML).join("")}</div>
+        <button type="button" class="add-cost" id="addOverhead">${icon("plus", 15)} Add a running cost</button>
+        <div class="field" style="margin-top:14px"><label>How many do you sell in a month? <span class="help" style="display:inline">estimate</span></label>
+          <input class="input" id="ohSales" inputmode="numeric" placeholder="e.g. 300" value="${b.monthlySales ?? ""}"/>
+          <p class="help">Across all your products. Leave blank to use the sales you log in Trackit.</p></div>
+        <div class="card" id="ohReadout" style="background:var(--surface-2);border:0;padding:14px 16px"></div>
+        <div class="actions" style="justify-content:flex-end;margin-top:14px"><button class="btn primary" id="saveOverheads">Save running costs</button></div>
+      </div>
+
       <div class="sec-head" style="max-width:560px"><h2>Billing</h2></div>
       <div class="card" style="max-width:560px">${billingCard()}</div>
 
@@ -910,6 +954,41 @@ export const Settings = {
       toast("Saved.", "good"); go("home");
     });
     $("#sLogout", root)?.addEventListener("click", () => logout());
+
+    // running costs (overhead)
+    let ohs = (Store.business().overheads || []).map((o) => ({ name: o.name || "", amount: o.amount ?? "", period: o.period || "month" }));
+    function ohReadout() {
+      const monthly = ohs.reduce((s, o) => s + (o.period === "year" ? (Number(o.amount) || 0) / 12 : (Number(o.amount) || 0)), 0);
+      const est = Number($("#ohSales", root).value) || 0;
+      const units = est || monthlyUnitsSold();
+      const per = units > 0 ? monthly / units : 0;
+      $("#ohReadout", root).innerHTML = monthly === 0
+        ? `<span class="help" style="margin:0">Add your running costs above to see the cost per unit.</span>`
+        : units > 0
+          ? `<div>Running costs <b>${naira(monthly)}/month</b>, spread over <b>${units}</b> sales a month.</div>
+             <div style="font-family:var(--display);font-weight:800;font-size:22px;margin-top:4px">+${naira(per)} <span style="font-size:.6em;color:var(--ink-3);font-weight:700">per unit</span></div>
+             <p class="help" style="margin-top:6px">Turn this on in Pricing to get a price that covers it.</p>`
+          : `<span class="help" style="margin:0">Enter how many you sell a month to see the cost per unit.</span>`;
+    }
+    function refreshOh() { $("#ohLines", root).innerHTML = ohs.map(overheadLineHTML).join(""); wireOh(); ohReadout(); }
+    function wireOh() {
+      $$("#ohLines .oh-line", root).forEach((row, i) => {
+        row.querySelector(".oh-name").addEventListener("input", (e) => { ohs[i].name = e.target.value; });
+        row.querySelector(".oh-amt input").addEventListener("input", (e) => { ohs[i].amount = e.target.value; ohReadout(); });
+        row.querySelector(".oh-period").addEventListener("change", (e) => { ohs[i].period = e.target.value; ohReadout(); });
+        row.querySelector(".oh-del").addEventListener("click", () => { ohs.splice(i, 1); refreshOh(); });
+      });
+    }
+    $("#addOverhead", root)?.addEventListener("click", () => { ohs.push({ name: "", amount: "", period: "month" }); refreshOh(); });
+    $("#ohSales", root)?.addEventListener("input", ohReadout);
+    wireOh(); ohReadout();
+    $("#saveOverheads", root)?.addEventListener("click", () => {
+      Store.saveBusiness({
+        overheads: ohs.filter((o) => (o.name || "").trim() || o.amount).map((o) => ({ name: (o.name || "Cost").trim(), amount: Number(o.amount) || 0, period: o.period === "year" ? "year" : "month" })),
+        monthlySales: Number($("#ohSales", root).value) || 0,
+      });
+      toast("Running costs saved.", "good");
+    });
 
     // logo upload
     const file = $("#logoFile", root), preview = $("#logoPreview", root), remove = $("#logoRemove", root);

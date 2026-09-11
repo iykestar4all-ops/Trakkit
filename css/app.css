@@ -315,6 +315,12 @@ textarea.input { resize: vertical; min-height: 72px; }
 /* flavors */
 .flavor-line { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 
+/* running costs (overhead) */
+.oh-line { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+.oh-toggle { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--ink); cursor: pointer; }
+.oh-toggle input { width: 18px; height: 18px; accent-color: var(--orange); flex: none; }
+.oh-toggle .oh-amt { color: var(--orange); font-weight: 800; font-size: 13px; }
+
 /* sarcastic reminder */
 .nudge { background: linear-gradient(100deg, var(--surface), rgba(247,165,59,.14)); border-color: rgba(247,165,59,.38); padding: 14px 16px; }
 .nudge b { font-size: 14.5px; }

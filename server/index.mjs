@@ -129,7 +129,7 @@ async function api(req, res, url) {
       return send(res, 413, { error: "Logo image is too large. Use a smaller file." });
     const b = db.data.businesses[uid];
     const patch = {};
-    for (const k of ["name", "owner", "whatsapp", "shopSlug", "targetMargin", "logo", "address", "payment", "ingredients"])
+    for (const k of ["name", "owner", "whatsapp", "shopSlug", "targetMargin", "logo", "address", "payment", "ingredients", "overheads", "monthlySales"])
       if (k in json) patch[k] = json[k];
     db.data.businesses[uid] = { ...b, ...patch };
     save();

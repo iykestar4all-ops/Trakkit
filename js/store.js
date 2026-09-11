@@ -159,6 +159,20 @@ export const lineBatchShare = (c) => (Number(c.amount) || 0) / (Number(c.batches
 export const perBatchCost = (p) => (p.costs || []).reduce((s, c) => s + lineBatchShare(c), 0);
 export const unitCost = (p) => perBatchCost(p) / (Number(p.batchYield) || 1);
 export const productPrice = (p) => Number(p.price) || Number(p.variants?.[0]?.price) || 0;
+
+/* ---- overhead (business running costs spread per unit) ---- */
+export const monthlyOverhead = (b = state.business) =>
+  (b.overheads || []).reduce((s, o) => s + ((o.period === "year" ? (Number(o.amount) || 0) / 12 : (Number(o.amount) || 0))), 0);
+export function monthlyUnitsSold() {
+  const now = new Date();
+  return state.sales.filter((s) => { const d = new Date(s.at); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); })
+    .reduce((sum, s) => sum + (Number(s.qty) || 0), 0);
+}
+export function overheadUnits(b = state.business) { return Number(b.monthlySales) || monthlyUnitsSold() || 0; }
+export function overheadPerUnit(b = state.business) {
+  const units = overheadUnits(b);
+  return units > 0 ? monthlyOverhead(b) / units : 0;
+}
 export const unitProfit = (p) => productPrice(p) - unitCost(p);
 export const marginPct = (p) => {
   const price = productPrice(p);
