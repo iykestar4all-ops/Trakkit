@@ -18,8 +18,16 @@ import { join, dirname } from "node:path";
 const DATA_DIR = process.env.TRACKIT_DATA_DIR || join(import.meta.dirname, "data");
 const FILE = join(DATA_DIR, "trackit.json");
 
-const SB_URL = (process.env.SUPABASE_URL || "").replace(/\/$/, "");
-const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+// Normalize whatever URL form was pasted (Project URL, Data API URL with a
+// trailing /rest/v1, missing protocol, trailing slash) down to the origin.
+function normalizeSupabaseUrl(u) {
+  if (!u) return "";
+  let s = u.trim();
+  if (!/^https?:\/\//i.test(s)) s = "https://" + s;
+  try { return new URL(s).origin; } catch { return s.replace(/\/+$/, ""); }
+}
+const SB_URL = normalizeSupabaseUrl(process.env.SUPABASE_URL);
+const SB_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
 const useSupabase = !!(SB_URL && SB_KEY);
 
 const EMPTY = {
@@ -74,8 +82,13 @@ function fileFlush(d) {
 /* ---------- init (top-level await) ---------- */
 let data;
 if (useSupabase) {
-  try { data = await sbLoad(); console.log("Storage: Supabase (persistent)"); }
-  catch (e) { console.error("Supabase load failed, starting empty:", e.message); data = structuredClone(EMPTY); }
+  try { data = await sbLoad(); console.log(`Storage: Supabase (persistent) — ${SB_URL}`); }
+  catch (e) {
+    console.error(`Supabase load failed at ${SB_URL}, starting empty:`, e.message);
+    if (/relation|does not exist|find the table|PGRST205/i.test(e.message))
+      console.error('HINT: create the table -> "create table if not exists kv (k text primary key, v jsonb);"');
+    data = structuredClone(EMPTY);
+  }
 } else {
   data = fileLoad();
   console.log("Storage: local JSON file (development)");
