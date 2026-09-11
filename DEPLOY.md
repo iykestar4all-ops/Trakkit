@@ -43,13 +43,26 @@ That URL works in any browser and on your phone. Sign up and you're in.
 
 Now "Subscribe" opens Paystack's hosted checkout, and Trackit verifies the payment (and the webhook) before activating the plan. No card details ever touch Trackit.
 
-## 4. Keep data between restarts (before real users)
+## 4. Keep data forever, free (Supabase) — do this so logins stick
 
-On Render, edit the service → **Settings** → change the plan to **Starter** (paid), then add a **Disk**:
-- Mount path: `/var/data`, size `1 GB`
-- Add env var `TRACKIT_DATA_DIR` = `/var/data/trackit`
+On the free plan Render wipes its own disk on every restart. To keep accounts, Trackit stores everything in **Supabase** (free Postgres) when two env vars are set. Data then survives restarts and redeploys, at ₦0.
 
-(These are pre-written, commented out, in `render.yaml`.) For scale, the next step is swapping the JSON store in `server/db.mjs` for Postgres.
+1. Go to **supabase.com**, create a free project (pick a region near you).
+2. In the project's **SQL Editor**, run:
+   ```sql
+   create table if not exists kv (k text primary key, v jsonb);
+   alter table kv enable row level security;
+   ```
+   (No RLS policies needed — Trackit connects with the service role key, which bypasses RLS. That key is server-only and never reaches the browser.)
+3. In Supabase → **Project Settings → API**, copy:
+   - **Project URL** (like `https://abcd.supabase.co`)
+   - **service_role** secret key (under Project API keys — keep it secret)
+4. In **Render → your `trackit` service → Environment**, add:
+   - `SUPABASE_URL` = the Project URL
+   - `SUPABASE_SERVICE_ROLE_KEY` = the service_role key
+   - **Save Changes** (Render redeploys).
+
+The startup log will now say `Storage: Supabase (persistent)`. From now on, accounts and data persist no matter what the host does — comfortably enough for your first 10+ clients before any tool costs money. (Free Supabase projects pause after ~1 week of no activity; open the Supabase dashboard to wake it. A weekly login or a cron ping keeps it active.)
 
 ## 5. Custom domain (optional)
 

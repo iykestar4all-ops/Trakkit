@@ -10,8 +10,18 @@ services:
     healthCheckPath: /
     autoDeploy: true
     envVars:
-      # Set this in the Render dashboard (Environment tab). Never commit a real key.
+      # Set these in the Render dashboard (Environment tab). Never commit real keys.
+      # --- Persistent storage (Supabase). With these set, accounts survive
+      #     restarts/redeploys even on the free plan. See DEPLOY.md step 4. ---
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # --- Payments (optional) ---
       - key: PAYSTACK_SECRET_KEY
+        sync: false
+      # --- AI report insights (optional) ---
+      - key: ANTHROPIC_API_KEY
         sync: false
       # Render provides PORT automatically; the server reads it.
 
